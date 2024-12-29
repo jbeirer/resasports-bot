@@ -1,11 +1,11 @@
-<img src=https://github.com/jbeirer/pysportbot/raw/main/docs/logo.svg alt="Logo" width="250">
+<img src=https://github.com/jbeirer/resasports-bot/raw/main/docs/logo.svg alt="Logo" width="250">
 
 
-[![Release](https://img.shields.io/github/v/release/jbeirer/pysportbot)](https://img.shields.io/github/v/release/jbeirer/pysportbot)
-[![Build status](https://img.shields.io/github/actions/workflow/status/jbeirer/pysportbot/main.yml?branch=main)](https://github.com/jbeirer/pysportbot/actions/workflows/main.yml?query=branch%3Amain)
-[![codecov](https://codecov.io/gh/jbeirer/pysportbot/graph/badge.svg?token=ZCJV384TXF)](https://codecov.io/gh/jbeirer/pysportbot)
-[![Commit activity](https://img.shields.io/github/commit-activity/m/jbeirer/pysportbot)](https://img.shields.io/github/commit-activity/m/jbeirer/pysportbot)
-[![License](https://img.shields.io/github/license/jbeirer/pysportbot)](https://img.shields.io/github/license/jbeirer/pysportbot)
+[![Release](https://img.shields.io/github/v/release/jbeirer/resasports-bot)](https://img.shields.io/github/v/release/jbeirer/resasports-bot)
+[![Build status](https://img.shields.io/github/actions/workflow/status/jbeirer/resasports-bot/main.yml?branch=main)](https://github.com/jbeirer/resasports-bot/actions/workflows/main.yml?query=branch%3Amain)
+[![codecov](https://codecov.io/gh/jbeirer/resasports-bot/graph/badge.svg?token=ZCJV384TXF)](https://codecov.io/gh/jbeirer/resasports-bot)
+[![Commit activity](https://img.shields.io/github/commit-activity/m/jbeirer/resasports-bot)](https://img.shields.io/github/commit-activity/m/jbeirer/resasports-bot)
+[![License](https://img.shields.io/github/license/jbeirer/resasports-bot)](https://img.shields.io/github/license/jbeirer/resasports-bot)
 
 
 Welcome to pysportbot!
