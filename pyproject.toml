@@ -16,6 +16,7 @@ requests = "^2.32.3"
 beautifulsoup4 = "^4.12.3"
 pandas = "^2.2.3"
 pytz = "^2024.2"
+schedule = "^1.2.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.4"

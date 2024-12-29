@@ -5,6 +5,26 @@ class ErrorMessages:
     """Centralized error messages for the application."""
 
     @staticmethod
+    def missing_required_key(key: str) -> str:
+        return f"Missing required key in config: {key}"
+
+    @staticmethod
+    def invalid_class_definition() -> str:
+        return "Each class must include 'activity', 'class_day', " "'class_time', 'booking_execution', and 'weekly'."
+
+    @staticmethod
+    def invalid_weekly_now() -> str:
+        return "Invalid combination: cannot use weekly=True with booking_execution='now'."
+
+    @staticmethod
+    def invalid_booking_execution_format() -> str:
+        return "Invalid booking_execution format. Use 'now' or 'Day HH:MM:SS'."
+
+    @staticmethod
+    def no_matching_slots_for_time(activity: str, class_time: str, booking_date: str) -> str:
+        return f"No matching slots available for {activity} at {class_time} on {booking_date}"
+
+    @staticmethod
     def not_logged_in() -> str:
         """Return an error message for not being logged in."""
         return "You must log in first."
