@@ -1,23 +1,18 @@
-import os
+import pytest
 
-from pysportbot import SportBot
+from pysportbot.utils.errors import ErrorMessages
 
 
-def test_login():
-    """
-    Test the login functionality of the SportBot.
-    """
-    # Retrieve credentials from environment variables
-    email = os.getenv("SPORTBOT_EMAIL")
-    password = os.getenv("SPORTBOT_PASSWORD")
+def test_login(bot):
 
-    assert email is not None, "SPORTBOT_EMAIL is not set in the environment."
-    assert password is not None, "SPORTBOT_PASSWORD is not set in the environment."
+    # Check if the bot is logged in
+    assert bot.is_logged_in(), "Bot failed to log in."
 
-    # Create bot instance
+
+def test_login_failure():
+    """Test login with invalid credentials."""
+    from pysportbot import SportBot
+
     bot = SportBot()
-
-    # Attempt login
-    bot.login(email, password)
-
-    assert bot.is_logged_in() == True, "Login failed."
+    with pytest.raises(Exception, match=ErrorMessages.login_failed()):
+        bot.login("invalid_email@example.com", "wrong_password")

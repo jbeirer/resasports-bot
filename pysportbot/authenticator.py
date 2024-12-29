@@ -24,6 +24,10 @@ class Authenticator:
         """
         self.session = session.session
         self.headers = session.headers
+        # Has the user successfully authenticated?
+        self.authenticated = False
+        # User ID for the authenticated user
+        self.user_id = None
 
     def login(self, email: str, password: str) -> None:
         """
@@ -88,3 +92,24 @@ class Authenticator:
             logger.error(f"Login to Nubapp failed: {response.status_code}, {response.text}")
             raise ValueError(ErrorMessages.failed_login_nubapp())
         logger.info("Login to Nubapp successful!")
+
+        # Step 5: Get user information
+        response = self.session.post(Endpoints.USER.value, headers=self.headers, allow_redirects=True)
+
+        if response.status_code == 200:
+            response_dict = json.loads(response.content.decode("utf-8"))
+
+            if response_dict["user"]:
+                self.user_id = response_dict.get("user", {}).get("id_user")
+                if self.user_id:
+                    self.authenticated = True
+                    logger.info(f"Authentication successful. User ID: {self.user_id}")
+                else:
+                    self.authenticated = False
+                    raise ValueError()
+            else:
+                self.authenticated = False
+                raise ValueError(ErrorMessages.failed_login())
+        else:
+            logger.error(f"Failed to retrieve user information: {response.status_code}, {response.text}")
+            raise ValueError(ErrorMessages.failed_login())

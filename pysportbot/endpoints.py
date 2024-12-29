@@ -15,7 +15,8 @@ class Endpoints(Enum):
     LOGIN_CHECK = f"{BASE_SOCIAL}/popup/login_check"
     NUBAP_LOGIN = f"{BASE_NUBAPP}/resources/login_from_social.php"
 
-    # Activities and Slots
+    # User, activities and slots
+    USER = f"{BASE_NUBAPP}/ajax/users/getUser.php"
     ACTIVITIES = f"{BASE_NUBAPP}/ajax/application/getActivities.php"
     SLOTS = f"{BASE_NUBAPP}/ajax/activities/getActivitiesCalendar.php"
 
