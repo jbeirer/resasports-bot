@@ -1,4 +1,4 @@
-<img src=https://github.com/jbeirer/resasports-bot/raw/main/docs/logo.svg alt="Logo" width="250">
+<img src=https://github.com/jbeirer/resasports-bot/raw/main/docs/logo.png alt="Logo" width="250">
 
 
 [![Release](https://img.shields.io/github/v/release/jbeirer/resasports-bot)](https://img.shields.io/github/v/release/jbeirer/resasports-bot)
