@@ -104,7 +104,9 @@ lint.ignore = [
     # DoNotAssignLambda
     "E731",
     # Comparison to true should be 'if cond is true:'
-    "E712"
+    "E712",
+    # Long exception message
+    "TRY003"
 ]
 
 [tool.coverage.report]
