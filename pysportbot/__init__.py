@@ -22,6 +22,7 @@ class SportBot:
         self._activities: Activities = Activities(self._session)
         self._bookings: Bookings = Bookings(self._session)
         self._df_activities: DataFrame | None = None
+        self._is_logged_in: bool = False  # State variable for login status
 
     def set_log_level(self, log_level: str) -> None:
         set_log_level(log_level)
@@ -29,11 +30,24 @@ class SportBot:
 
     def login(self, email: str, password: str) -> None:
         self._logger.info("Attempting to log in...")
-        self._auth.login(email, password)
-        self._df_activities = self._activities.fetch()
-        self._logger.info("Login successful!")
+        try:
+            self._auth.login(email, password)
+            self._df_activities = self._activities.fetch()
+            self._is_logged_in = True  # Set login state to True
+            self._logger.info("Login successful!")
+        except Exception:
+            self._is_logged_in = False  # Ensure state is False on failure
+            self._logger.exception(ErrorMessages.login_failed())
+            raise
+
+    def is_logged_in(self) -> bool:
+        """Returns the login status."""
+        return self._is_logged_in
 
     def activities(self, limit: int | None = None) -> DataFrame:
+        if not self._is_logged_in:
+            self._logger.error(ErrorMessages.not_logged_in())
+            raise PermissionError(ErrorMessages.not_logged_in())
         if self._df_activities is None:
             self._logger.error(ErrorMessages.no_activities_loaded())
             raise ValueError(ErrorMessages.no_activities_loaded())
@@ -41,6 +55,9 @@ class SportBot:
         return df.head(limit) if limit else df
 
     def daily_slots(self, activity: str, day: str, limit: int | None = None) -> DataFrame:
+        if not self._is_logged_in:
+            self._logger.error(ErrorMessages.not_logged_in())
+            raise PermissionError(ErrorMessages.not_logged_in())
         if self._df_activities is None:
             self._logger.error(ErrorMessages.no_activities_loaded())
             raise ValueError(ErrorMessages.no_activities_loaded())
@@ -48,6 +65,9 @@ class SportBot:
         return df.head(limit) if limit else df
 
     def book(self, activity: str, start_time: str) -> None:
+        if not self._is_logged_in:
+            self._logger.error(ErrorMessages.not_logged_in())
+            raise PermissionError(ErrorMessages.not_logged_in())
         if self._df_activities is None:
             self._logger.error(ErrorMessages.no_activities_loaded())
             raise ValueError(ErrorMessages.no_activities_loaded())
@@ -60,6 +80,9 @@ class SportBot:
         self._bookings.book(matching_slot.iloc[0]["id_activity_calendar"])
 
     def cancel(self, activity: str, start_time: str) -> None:
+        if not self._is_logged_in:
+            self._logger.error(ErrorMessages.not_logged_in())
+            raise PermissionError(ErrorMessages.not_logged_in())
         if self._df_activities is None:
             self._logger.error(ErrorMessages.no_activities_loaded())
             raise ValueError(ErrorMessages.no_activities_loaded())

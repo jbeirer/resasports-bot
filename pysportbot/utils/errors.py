@@ -5,6 +5,16 @@ class ErrorMessages:
     """Centralized error messages for the application."""
 
     @staticmethod
+    def not_logged_in() -> str:
+        """Return an error message for not being logged in."""
+        return "You must log in first."
+
+    @staticmethod
+    def login_failed() -> str:
+        """Return an error message for a failed login."""
+        return "Login failed. Please check your credentials and try again."
+
+    @staticmethod
     def invalid_log_level(level: str) -> ValueError:
         """
         Generate a ValueError for an invalid logging level.

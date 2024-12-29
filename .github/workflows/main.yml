@@ -55,6 +55,9 @@ jobs:
           python -m pip install tox tox-gh-actions
 
       - name: Test with tox
+        env:
+          SPORTBOT_EMAIL: ${{ secrets.SPORTBOT_EMAIL }}
+          SPORTBOT_PASSWORD: ${{ secrets.SPORTBOT_PASSWORD }}
         run: tox
 
       - name: Upload coverage reports to Codecov with GitHub Actions
