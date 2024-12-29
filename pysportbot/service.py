@@ -151,7 +151,13 @@ def attempt_booking(
             logger.info(f"Successfully booked {activity} at {slot_id}")
 
         except Exception as e:
-            logger.warning(f"Attempt {attempt_num} failed for {activity}: {e}")
+            error_str = str(e)
+            logger.warning(f"Attempt {attempt_num} failed for {activity}: {error_str}")
+
+            if ErrorMessages.slot_already_booked() in error_str:
+                logger.warning(f"{activity} at {class_time} on {booking_date} is already booked; skipping retry.")
+                return
+
             if attempt_num < retry_attempts:
                 logger.info(f"Retrying in {retry_delay_minutes} minutes...")
                 time.sleep(retry_delay_minutes * 60)
