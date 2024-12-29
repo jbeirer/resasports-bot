@@ -33,7 +33,7 @@ class SportBot:
         try:
             self._auth.login(email, password)
             self._df_activities = self._activities.fetch()
-            self._is_logged_in = True  # Set login state to True
+            self._is_logged_in = True
             self._logger.info("Login successful!")
         except Exception:
             self._is_logged_in = False  # Ensure state is False on failure
