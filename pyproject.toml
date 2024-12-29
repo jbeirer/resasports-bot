@@ -16,6 +16,7 @@ requests = "^2.32.3"
 beautifulsoup4 = "^4.12.3"
 pandas = "^2.2.3"
 pytz = "^2024.2"
+schedule = "^1.2.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.4"
@@ -103,7 +104,9 @@ lint.ignore = [
     # DoNotAssignLambda
     "E731",
     # Comparison to true should be 'if cond is true:'
-    "E712"
+    "E712",
+    # Long exception message
+    "TRY003"
 ]
 
 [tool.coverage.report]
