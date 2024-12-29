@@ -1,0 +1,10 @@
+#! /usr/bin/env bash
+
+# Install pyqt5
+sudo apt-get update && sudo apt-get -y install python3-pyqt5
+
+# Install Dependencies
+poetry install --with dev
+
+# Install pre-commit hooks
+poetry run pre-commit install --install-hooks
