@@ -35,22 +35,22 @@ class SportBot:
 
     def activities(self, limit: int | None = None) -> DataFrame:
         if self._df_activities is None:
-            self._logger.error(ErrorMessages.NO_ACTIVITIES_LOADED)
-            raise ValueError(ErrorMessages.NO_ACTIVITIES_LOADED)
+            self._logger.error(ErrorMessages.no_activities_loaded())
+            raise ValueError(ErrorMessages.no_activities_loaded())
         df = self._df_activities[["name_activity", "id_activity"]]
         return df.head(limit) if limit else df
 
     def daily_slots(self, activity: str, day: str, limit: int | None = None) -> DataFrame:
         if self._df_activities is None:
-            self._logger.error(ErrorMessages.NO_ACTIVITIES_LOADED)
-            raise ValueError(ErrorMessages.NO_ACTIVITIES_LOADED)
+            self._logger.error(ErrorMessages.no_activities_loaded())
+            raise ValueError(ErrorMessages.no_activities_loaded())
         df = self._activities.daily_slots(self._df_activities, activity, day)
         return df.head(limit) if limit else df
 
     def book(self, activity: str, start_time: str) -> None:
         if self._df_activities is None:
-            self._logger.error(ErrorMessages.NO_ACTIVITIES_LOADED)
-            raise ValueError(ErrorMessages.NO_ACTIVITIES_LOADED)
+            self._logger.error(ErrorMessages.no_activities_loaded())
+            raise ValueError(ErrorMessages.no_activities_loaded())
         slots = self.daily_slots(activity, start_time.split(" ")[0])
         matching_slot = slots[slots["start_timestamp"] == start_time]
         if matching_slot.empty:
@@ -61,8 +61,8 @@ class SportBot:
 
     def cancel(self, activity: str, start_time: str) -> None:
         if self._df_activities is None:
-            self._logger.error(ErrorMessages.NO_ACTIVITIES_LOADED)
-            raise ValueError(ErrorMessages.NO_ACTIVITIES_LOADED)
+            self._logger.error(ErrorMessages.no_activities_loaded())
+            raise ValueError(ErrorMessages.no_activities_loaded())
         slots = self.daily_slots(activity, start_time.split(" ")[0])
         matching_slot = slots[slots["start_timestamp"] == start_time]
         if matching_slot.empty:
