@@ -20,7 +20,7 @@ def run_service(
     time_zone: str = "Europe/Madrid",
 ) -> None:
     bot = SportBot()
-    bot.login(config["email"], config["password"])
+    bot.login(config["email"], config["password"], config["centre"])
 
     validate_config_and_activities(config, bot)
 

@@ -41,7 +41,7 @@ class Bookings:
         }
 
         # Send booking request
-        response = self.session.post(Endpoints.BOOKING.value, data=payload, headers=self.headers)
+        response = self.session.post(Endpoints.BOOKING, data=payload, headers=self.headers)
         response_json = json.loads(response.content.decode("utf-8"))
 
         # Handle response
@@ -73,7 +73,7 @@ class Bookings:
         payload = {"id_activity_calendar": slot_id}
 
         # Send cancellation request
-        response = self.session.post(Endpoints.CANCELLATION.value, data=payload, headers=self.headers)
+        response = self.session.post(Endpoints.CANCELLATION, data=payload, headers=self.headers)
         response_json = json.loads(response.content.decode("utf-8"))
 
         # Handle response

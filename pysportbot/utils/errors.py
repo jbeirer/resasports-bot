@@ -5,6 +5,16 @@ class ErrorMessages:
     """Centralized error messages for the application."""
 
     @staticmethod
+    def no_centre_selected() -> str:
+        """Return an error message for no centre selected."""
+        return "No centre selected. Please set a centre first."
+
+    @staticmethod
+    def centre_not_found(centre: str) -> str:
+        """Return an error message for a centre not found."""
+        return f"Centre '{centre}' not found. Please check the list of available centres."
+
+    @staticmethod
     def missing_required_key(key: str) -> str:
         return f"Missing required key in config: {key}"
 

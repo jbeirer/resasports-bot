@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 class Authenticator:
     """Handles user authentication and Nubapp login functionality."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, centre: str) -> None:
         """
         Initialize the Authenticator.
 
@@ -28,6 +28,8 @@ class Authenticator:
         self.authenticated = False
         # User ID for the authenticated user
         self.user_id = None
+        # Centre selected by the user
+        self.centre = centre
 
     def login(self, email: str, password: str) -> None:
         """
@@ -43,8 +45,8 @@ class Authenticator:
         logger.info("Starting login process...")
 
         # Step 1: Fetch CSRF token
-        logger.debug(f"GET {Endpoints.USER_LOGIN.value} | Headers: {json.dumps(self.headers, indent=2)}")
-        response = self.session.get(Endpoints.USER_LOGIN.value, headers=self.headers)
+        logger.debug(f"GET {Endpoints.USER_LOGIN} | Headers: {json.dumps(self.headers, indent=2)}")
+        response = self.session.get(Endpoints.USER_LOGIN, headers=self.headers)
         if response.status_code != 200:
             logger.error(f"Failed to fetch login popup: {response.status_code}")
             raise RuntimeError(ErrorMessages.failed_fetch("login popup"))
@@ -61,18 +63,19 @@ class Authenticator:
         }
         self.headers.update({"Content-Type": "application/x-www-form-urlencoded"})
         logger.debug(
-            f"POST {Endpoints.LOGIN_CHECK.value} | Headers: {json.dumps(self.headers, indent=2)} | "
+            f"POST {Endpoints.LOGIN_CHECK} | Headers: {json.dumps(self.headers, indent=2)} | "
             f"Payload: {json.dumps(payload, indent=2)}"
         )
-        response = self.session.post(Endpoints.LOGIN_CHECK.value, data=payload, headers=self.headers)
+        response = self.session.post(Endpoints.LOGIN_CHECK, data=payload, headers=self.headers)
         if response.status_code != 200:
             logger.error(f"Login failed: {response.status_code}, {response.text}")
             raise ValueError(ErrorMessages.failed_login())
         logger.info("Login successful!")
 
         # Step 3: Retrieve credentials for Nubapp
-        logger.debug(f"GET {Endpoints.CRED_REQUEST.value} | Headers: {json.dumps(self.headers, indent=2)}")
-        response = self.session.get(Endpoints.CRED_REQUEST.value, headers=self.headers)
+        cred_endpoint = Endpoints.get_cred_endpoint(self.centre)
+        logger.debug(f"GET {cred_endpoint} | Headers: {json.dumps(self.headers, indent=2)}")
+        response = self.session.get(cred_endpoint, headers=self.headers)
         if response.status_code != 200:
             logger.error(f"Failed to retrieve Nubapp credentials: {response.status_code}")
             raise RuntimeError(ErrorMessages.failed_fetch("credentials"))
@@ -84,17 +87,17 @@ class Authenticator:
 
         # Step 4: Log in to Nubapp
         logger.debug(
-            f"GET {Endpoints.NUBAP_LOGIN.value} | Headers: {json.dumps(self.headers, indent=2)} | "
+            f"GET {Endpoints.NUBAP_LOGIN} | Headers: {json.dumps(self.headers, indent=2)} | "
             f"Params: {json.dumps(nubapp_creds, indent=2)}"
         )
-        response = self.session.get(Endpoints.NUBAP_LOGIN.value, headers=self.headers, params=nubapp_creds)
+        response = self.session.get(Endpoints.NUBAP_LOGIN, headers=self.headers, params=nubapp_creds)
         if response.status_code != 200:
             logger.error(f"Login to Nubapp failed: {response.status_code}, {response.text}")
             raise ValueError(ErrorMessages.failed_login_nubapp())
         logger.info("Login to Nubapp successful!")
 
         # Step 5: Get user information
-        response = self.session.post(Endpoints.USER.value, headers=self.headers, allow_redirects=True)
+        response = self.session.post(Endpoints.USER, headers=self.headers, allow_redirects=True)
 
         if response.status_code == 200:
             response_dict = json.loads(response.content.decode("utf-8"))

@@ -20,11 +20,11 @@ pip install pysportbot
 ```python
 from pysportbot import SportBot
 
-# Create bot instance
-bot = SportBot()
+# Create bot instance, will list available centres
+bot = SportBot(log_level='INFO', print_centres=False)
 
 # Connect to service with email and password
-bot.login('email', 'password')
+bot.login('email', 'password', 'centre')
 
 # List available activites
 bot.activities(limit = 10)

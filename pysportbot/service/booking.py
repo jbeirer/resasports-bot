@@ -98,7 +98,7 @@ def schedule_bookings(
         def booking_task() -> None:
             try:
                 logger.info("Re-authenticating before weekly booking...")
-                bot.login(config["email"], config["password"])
+                bot.login(config["email"], config["password"], config["centre"])
                 logger.info("Re-authentication successful.")
                 attempt_booking(
                     bot,
