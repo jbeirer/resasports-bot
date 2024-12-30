@@ -431,6 +431,61 @@ class TestService(unittest.TestCase):
         self.assertEqual(mock_bot_instance.book.call_count, 2)
         self.assertTrue(mock_sleep.called, "Expected to sleep between retries")
 
+    @patch("pysportbot.service.datetime", wraps=datetime)
+    def test_calculate_next_execution_time_already_passed(self, mock_datetime):
+        """
+        If today is Monday 2024-12-30 and the time is 07:00:00,
+        and the booking execution is 'Monday 06:30:00', the next execution
+        should be on Monday 2025-01-06.
+        """
+        tz = pytz.timezone("Europe/Madrid")
+        mock_now = tz.localize(datetime(2024, 12, 30, 7, 0, 0))
+        mock_datetime.now.return_value = mock_now
+
+        # Call the function
+        result = calculate_next_execution("Monday 06:30:00", time_zone="Europe/Madrid")
+
+        # Expected result
+        expected = tz.localize(datetime(2025, 1, 6, 6, 30, 0))
+        self.assertEqual(result, expected)
+
+    @patch("pysportbot.service.time.sleep", return_value=None)
+    @patch("pysportbot.service.SportBot")
+    def test_slot_matching(self, mock_sportbot_class, mock_sleep):
+        """
+        Ensure the service correctly matches a slot with a specific time.
+        """
+        mock_bot_instance = mock_sportbot_class.return_value
+        mock_bot_instance.activities.return_value = pd.DataFrame({"name_activity": ["Gimnasio"]})
+        mock_bot_instance.daily_slots.return_value = pd.DataFrame(
+            {"start_timestamp": ["2024-12-31 12:00:00", "2024-12-31 15:00:00"]}
+        )
+
+        config = {
+            "email": "test@example.com",
+            "password": "password",
+            "classes": [
+                {
+                    "activity": "Gimnasio",
+                    "class_day": "Tuesday",
+                    "class_time": "12:00:00",
+                    "booking_execution": "Monday 06:30:00",
+                    "weekly": False,
+                }
+            ],
+        }
+
+        run_service(
+            config,
+            offset_seconds=0,
+            retry_attempts=1,
+            retry_delay_minutes=0,
+            time_zone="Europe/Madrid",
+        )
+
+        # Assert that the correct slot was booked
+        mock_bot_instance.book.assert_called_with(activity="Gimnasio", start_time="2024-12-31 12:00:00")
+
 
 if __name__ == "__main__":
     unittest.main()
