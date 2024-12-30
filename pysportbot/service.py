@@ -207,7 +207,7 @@ def schedule_bookings(
     class_time = cls["class_time"]
 
     if weekly:
-        # For weekly bookings, schedule the task to recur every specified day and time
+        # For weekly bookings, schedule recurring jobs
         execution_day, execution_time = booking_execution.split()
         logger.info(
             f"Class '{activity}' on {class_day} at {class_time} "
@@ -233,27 +233,26 @@ def schedule_bookings(
         getattr(schedule.every(), execution_day.lower()).at(execution_time).do(booking_task)
 
     else:
-        # For non-weekly bookings, calculate the next execution and class day
+        # For non-weekly bookings, calculate exact dates
         next_execution = calculate_next_execution(booking_execution, time_zone)
-        next_execution_str = next_execution.strftime("%Y-%m-%d (%A) %H:%M:%S %z")
-
         tz = pytz.timezone(time_zone)
+
         day_of_week_target = DAY_MAP[class_day.lower().strip()]
         execution_day_of_week = next_execution.weekday()
 
-        # Calculate days ahead for the next occurrence of the class day after execution
+        # Find the next class date relative to the execution time
         days_to_class = (day_of_week_target - execution_day_of_week + 7) % 7
-        if days_to_class == 0:  # If same day, move to next week
-            days_to_class = 7
         planned_class_date_dt = next_execution + timedelta(days=days_to_class)
         planned_class_date_str = planned_class_date_dt.strftime("%Y-%m-%d (%A)")
+
+        next_execution_str = next_execution.strftime("%Y-%m-%d (%A) %H:%M:%S %z")
 
         logger.info(
             f"Class '{activity}' on {planned_class_date_str} at {class_time} "
             f"will be booked on {next_execution_str}."
         )
 
-        # Calculate time until execution
+        # Wait until the next execution time
         time_until_execution = (next_execution - datetime.now(tz)).total_seconds()
         time.sleep(max(0, time_until_execution))
 
