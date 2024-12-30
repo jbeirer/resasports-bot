@@ -33,6 +33,7 @@ class TestService(unittest.TestCase):
         config_missing_email = {
             # 'email': 'someone@example.com',  # Oops, we forgot to include it
             "password": "secret",
+            "centre": "my-gim",
             "classes": [],
         }
         with self.assertRaises(ValueError) as ctx:
@@ -51,6 +52,7 @@ class TestService(unittest.TestCase):
         config = {
             "email": "someone@example.com",
             "password": "secret",
+            "centre": "my-gim",
             "classes": [
                 {
                     # Missing "activity", "class_day", etc.
@@ -76,6 +78,7 @@ class TestService(unittest.TestCase):
         config = {
             "email": "someone@example.com",
             "password": "secret",
+            "centre": "my-gim",
             "classes": [
                 {
                     "activity": "Yoga",
@@ -114,6 +117,7 @@ class TestService(unittest.TestCase):
         config = {
             "email": "test@example.com",
             "password": "password",
+            "centre": "my-gim",
             "classes": [
                 {
                     "activity": "CrossFit",
@@ -189,6 +193,7 @@ class TestService(unittest.TestCase):
         config = {
             "email": "test@example.com",
             "password": "password",
+            "centre": "my-gim",
             "classes": [
                 {
                     "activity": "Yoga",
@@ -210,7 +215,7 @@ class TestService(unittest.TestCase):
                 time_zone="Europe/Madrid",
             )
 
-        mock_bot_instance.login.assert_called_with("test@example.com", "password")
+        mock_bot_instance.login.assert_called_with("test@example.com", "password", "my-gim")
         self.assertTrue(mock_bot_instance.login.called, "Expected login to be called")
 
     @patch("pysportbot.service.scheduling.datetime")
@@ -237,6 +242,7 @@ class TestService(unittest.TestCase):
             {
                 "email": "test@example.com",
                 "password": "password",
+                "centre": "my-gim",
                 "classes": [
                     {
                         "activity": "Yoga",
@@ -280,6 +286,7 @@ class TestService(unittest.TestCase):
         config = {
             "email": "test@example.com",
             "password": "password",
+            "centre": "my-gim",
             "classes": [
                 {
                     "activity": "Yoga",
@@ -335,6 +342,7 @@ class TestService(unittest.TestCase):
         config = {
             "email": "test@example.com",
             "password": "password",
+            "centre": "my-gim",
             "classes": [
                 {
                     "activity": "Yoga",
@@ -385,6 +393,7 @@ class TestService(unittest.TestCase):
         config = {
             "email": "test@example.com",
             "password": "password",
+            "centre": "my-gim",
             "classes": [
                 {
                     "activity": "Yoga",
@@ -459,6 +468,7 @@ class TestService(unittest.TestCase):
         config = {
             "email": "test@example.com",
             "password": "password",
+            "centre": "my-gim",
             "classes": [
                 {
                     "activity": "Gimnasio",

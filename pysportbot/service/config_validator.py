@@ -11,7 +11,7 @@ DAY_MAP = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4
 
 
 def validate_config(config: Dict[str, Any]) -> None:
-    required_keys = ["email", "password", "classes"]
+    required_keys = ["email", "password", "centre", "classes"]
     for key in required_keys:
         if key not in config:
             raise ValueError(ErrorMessages.missing_required_key(key))

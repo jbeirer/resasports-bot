@@ -31,7 +31,7 @@ class Activities:
             RuntimeError: If the request fails.
         """
         logger.info("Fetching activities...")
-        response = self.session.post(Endpoints.ACTIVITIES.value, headers=self.headers)
+        response = self.session.post(Endpoints.ACTIVITIES, headers=self.headers)
         if response.status_code != 200:
             error_msg = ErrorMessages.failed_fetch("activities")
             logger.error(error_msg)
@@ -80,7 +80,7 @@ class Activities:
             "start": unix_day_bounds[0],
             "end": unix_day_bounds[1],
         }
-        response = self.session.get(Endpoints.SLOTS.value, headers=self.headers, params=params)
+        response = self.session.get(Endpoints.SLOTS, headers=self.headers, params=params)
         if response.status_code != 200:
             error_msg = ErrorMessages.failed_fetch("slots")
             logger.error(error_msg)
