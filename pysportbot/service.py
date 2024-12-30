@@ -73,27 +73,51 @@ def validate_config_and_activities(config: Dict[str, Any], bot: SportBot) -> Non
 
 
 def calculate_next_execution(booking_execution: str, time_zone: str = "Europe/Madrid") -> datetime:
+    """
+    Calculate the next execution time based on the booking execution day and time.
+
+    Args:
+        booking_execution (str): Execution in the format 'Day HH:MM:SS' or 'now'.
+        time_zone (str): The timezone for localization.
+
+    Returns:
+        datetime: The next execution time as a timezone-aware datetime.
+    """
     tz = pytz.timezone(time_zone)
 
+    # Handle the special case where execution is "now"
     if booking_execution == "now":
         return datetime.now(tz)
 
+    # Split the booking execution string into day and time components
     execution_day, execution_time = booking_execution.split()
     now = datetime.now(tz)
 
+    # Map the day name to a day-of-week index (0 = Monday, 6 = Sunday)
     day_of_week_target = DAY_MAP[execution_day.lower().strip()]
     current_weekday = now.weekday()
 
-    days_ahead = day_of_week_target - current_weekday
-    if days_ahead <= 0:
-        days_ahead += 7
+    # Parse the execution time
+    exec_time = datetime.strptime(execution_time, "%H:%M:%S").time()
 
-    next_execution_date = now + timedelta(days=days_ahead)
-    execution_datetime = datetime.strptime(
-        f"{next_execution_date.strftime('%Y-%m-%d')} {execution_time}",
-        "%Y-%m-%d %H:%M:%S",
-    )
-    execution_datetime = tz.localize(execution_datetime)
+    # Determine the next execution date
+    if day_of_week_target == current_weekday and now.time() < exec_time:
+        # If the target day is today and the time is in the future, schedule for today
+        next_execution_date = now
+    else:
+        # Otherwise, calculate the next occurrence of the target day
+        days_ahead = day_of_week_target - current_weekday
+        if days_ahead <= 0:  # If the target day is earlier this week, move to the next week
+            days_ahead += 7
+        next_execution_date = now + timedelta(days=days_ahead)
+
+    # Combine the execution date and time into a naive datetime
+    execution_datetime = datetime.combine(next_execution_date.date(), exec_time)
+
+    # Localize the naive datetime to the specified timezone
+    if execution_datetime.tzinfo is None:
+        execution_datetime = tz.localize(execution_datetime)
+
     return execution_datetime
 
 
@@ -183,10 +207,11 @@ def schedule_bookings(
     class_time = cls["class_time"]
 
     if weekly:
+        # For weekly bookings, schedule the task to recur every specified day and time
         execution_day, execution_time = booking_execution.split()
         logger.info(
             f"Class '{activity}' on {class_day} at {class_time} "
-            f"will be booked weekly every {execution_day} at {execution_time}."
+            f"will be booked every {execution_day} at {execution_time}."
         )
 
         def booking_task() -> None:
@@ -206,17 +231,30 @@ def schedule_bookings(
                 logger.exception(f"Failed to execute weekly booking task for {activity}")
 
         getattr(schedule.every(), execution_day.lower()).at(execution_time).do(booking_task)
-    else:
-        planned_class_date_dt = calculate_class_day(class_day, time_zone)
-        planned_class_date_str = planned_class_date_dt.strftime("%Y-%m-%d")
 
+    else:
+        # For non-weekly bookings, calculate the next execution and class day
         next_execution = calculate_next_execution(booking_execution, time_zone)
+        next_execution_str = next_execution.strftime("%Y-%m-%d (%A) %H:%M:%S %z")
+
+        tz = pytz.timezone(time_zone)
+        day_of_week_target = DAY_MAP[class_day.lower().strip()]
+        execution_day_of_week = next_execution.weekday()
+
+        # Calculate days ahead for the next occurrence of the class day after execution
+        days_to_class = (day_of_week_target - execution_day_of_week + 7) % 7
+        if days_to_class == 0:  # If same day, move to next week
+            days_to_class = 7
+        planned_class_date_dt = next_execution + timedelta(days=days_to_class)
+        planned_class_date_str = planned_class_date_dt.strftime("%Y-%m-%d (%A)")
+
         logger.info(
-            f"Class '{activity}' on {class_day}, {planned_class_date_str} at {class_time} "
-            f"will be booked on {next_execution}."
+            f"Class '{activity}' on {planned_class_date_str} at {class_time} "
+            f"will be booked on {next_execution_str}."
         )
 
-        time_until_execution = (next_execution - datetime.now(pytz.timezone(time_zone))).total_seconds()
+        # Calculate time until execution
+        time_until_execution = (next_execution - datetime.now(tz)).total_seconds()
         time.sleep(max(0, time_until_execution))
 
         attempt_booking(

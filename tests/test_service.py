@@ -138,7 +138,7 @@ class TestService(unittest.TestCase):
     # 3. Tests for the utility functions that calculate execution dates
     # ------------------------------------------------------------------------
 
-    @patch("pysportbot.service.datetime")  # Correct import path
+    @patch("pysportbot.service.datetime", wraps=datetime)  # Use the real datetime for unmocked methods
     def test_calculate_next_execution(self, mock_datetime):
         """
         If today is Wednesday 2024-01-10, then 'Friday 07:30:00' should be 2 days ahead (2024-01-12).
@@ -146,11 +146,14 @@ class TestService(unittest.TestCase):
         tz = pytz.timezone("Europe/Madrid")
         mock_now = tz.localize(datetime(2024, 1, 10, 12, 0, 0))  # Wednesday
         mock_datetime.now.return_value = mock_now
-        # Ensure strptime still works as normal
-        mock_datetime.strptime.side_effect = lambda s, fmt: datetime.strptime(s, fmt)
 
+        # Call the function
         result = calculate_next_execution("Friday 07:30:00", time_zone="Europe/Madrid")
+
+        # Expected result
         expected = tz.localize(datetime(2024, 1, 12, 7, 30, 0))
+
+        # Assert
         self.assertEqual(result, expected)
 
     @patch("pysportbot.service.datetime")  # Correct import path
@@ -170,13 +173,18 @@ class TestService(unittest.TestCase):
     # 4. Tests for the main booking logic (weekly vs. one-off)
     # ------------------------------------------------------------------------
 
-    @patch("pysportbot.service.SportBot")  # Correct import path
-    @patch("pysportbot.service.schedule.run_pending")  # Correct import path
-    @patch("pysportbot.service.time.sleep", return_value=None)  # Correct import path
-    def test_weekly_scheduling(self, mock_sleep, mock_run_pending, mock_sportbot_class):
+    @patch("pysportbot.service.datetime", wraps=datetime)
+    @patch("pysportbot.service.SportBot")
+    @patch("pysportbot.service.schedule.run_pending")
+    @patch("pysportbot.service.time.sleep", return_value=None)
+    def test_weekly_scheduling(self, mock_sleep, mock_run_pending, mock_sportbot_class, mock_datetime):
         """
         Test that run_service schedules a weekly job and (theoretically) calls schedule.run_pending() in a loop.
         """
+        tz = pytz.timezone("Europe/Madrid")
+        fixed_now = tz.localize(datetime(2024, 1, 3, 12, 0, 0))  # Wednesday
+        mock_datetime.now.return_value = fixed_now
+
         mock_bot_instance = mock_sportbot_class.return_value
         mock_bot_instance.activities.return_value = pd.DataFrame({"name_activity": ["Yoga"]})
         mock_bot_instance.daily_slots.return_value = pd.DataFrame({"start_timestamp": ["2024-01-08 18:00:00"]})
@@ -195,7 +203,7 @@ class TestService(unittest.TestCase):
             ],
         }
 
-        # To prevent an infinite loop during testing, we'll patch schedule.jobs to have at least one job
+        # Ensure schedule.jobs is patched to avoid infinite loops
         with patch("pysportbot.service.schedule.jobs", new=[]):
             run_service(
                 config,
@@ -206,11 +214,6 @@ class TestService(unittest.TestCase):
             )
 
         mock_bot_instance.login.assert_called_with("test@example.com", "password")
-        # For weekly, we expect schedule.run_pending() to be called in an infinite loop
-        # However, since we've patched schedule.jobs to an empty list, the while loop won't run
-        # Thus, run_pending should not be called. To test scheduling, we need a different approach.
-
-        # For now, we'll just ensure that login was called
         self.assertTrue(mock_bot_instance.login.called, "Expected login to be called")
 
     @patch("pysportbot.service.datetime")
