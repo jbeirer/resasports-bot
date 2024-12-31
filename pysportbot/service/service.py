@@ -9,8 +9,6 @@ from pysportbot.utils.logger import get_logger
 from .booking import schedule_bookings
 from .config_validator import validate_activities, validate_config
 
-logger = get_logger(__name__)
-
 
 def run_service(
     config: Dict[str, Any],
@@ -18,12 +16,16 @@ def run_service(
     retry_attempts: int,
     retry_delay_minutes: int,
     time_zone: str = "Europe/Madrid",
+    log_level: str = "INFO",
 ) -> None:
+    # Initialize service logger
+    logger = get_logger(__name__)
+    logger.setLevel(log_level)
 
     # Validate the configuration file
     validate_config(config)
-
-    bot = SportBot()
+    # Initialize the SportBot instance
+    bot = SportBot(log_level=log_level)
     bot.login(config["email"], config["password"], config["centre"])
 
     # Validate the activities in the configuration file

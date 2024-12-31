@@ -15,7 +15,8 @@ def main() -> None:
     parser.add_argument(
         "--retry-delay-minutes", type=int, default=2, help="Delay in minutes between retries for weekly bookings."
     )
-    parser.add_argument("--time_zone", type=str, default="Europe/Madrid", help="Timezone for the service.")
+    parser.add_argument("--time-zone", type=str, default="Europe/Madrid", help="Timezone for the service.")
+    parser.add_argument("--log-level", type=str, default="INFO", help="Logging level for the service.")
     args = parser.parse_args()
 
     config: Dict[str, Any] = load_config(args.config)
@@ -25,6 +26,7 @@ def main() -> None:
         retry_attempts=args.retry_attempts,
         retry_delay_minutes=args.retry_delay_minutes,
         time_zone=args.time_zone,
+        log_level=args.log_level,
     )
 
 
