@@ -33,11 +33,12 @@ class Centres:
             }
         }
         self._df_centres = self.fetch_centres()
-        if print_centres:
-            self.print_centres()
 
         # list of centre (slugs)
         self.centre_list = self._df_centres["slug"].tolist()
+
+        if print_centres:
+            self.print_centres()
 
     def check_centre(self, centre: str) -> None:
         """
