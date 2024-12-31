@@ -19,7 +19,7 @@ def bot():
     assert centre is not None, "SPORTBOT_CENTRE is not set in the environment."
 
     # Create a new SportBot instance with DEBUG logging
-    bot = SportBot(log_level="DEBUG")
+    bot = SportBot(log_level="DEBUG", print_centres=False)
 
     # Log in to user account
     bot.login(email, password, centre)
