@@ -105,6 +105,11 @@ class ErrorMessages:
         return f"No slot found for activity '{activity_name}' at {start_time}."
 
     @staticmethod
+    def slot_not_bookable_yet() -> str:
+        """Return an error message for a slot not bookable yet."""
+        return "The slot is not bookable yet."
+
+    @staticmethod
     def slot_already_booked() -> str:
         """Return an error message for a slot already booked."""
         return "The slot is already booked."

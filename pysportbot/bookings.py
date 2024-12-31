@@ -53,6 +53,9 @@ class Bookings:
         elif response_json["error"] == 6:
             logger.warning(f"Slot {slot_id} is not available.")
             raise ValueError(ErrorMessages.slot_unavailable())
+        elif response_json["error"] == 28:
+            logger.warning(f"Slot {slot_id} is not bookable yet.")
+            raise ValueError(ErrorMessages.slot_not_bookable_yet())
         else:
             logger.error(f"Booking failed with error code: {response_json['error']}")
             raise RuntimeError(ErrorMessages.unknown_error("booking"))

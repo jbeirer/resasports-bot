@@ -7,7 +7,7 @@ from pysportbot import SportBot
 from pysportbot.utils.logger import get_logger
 
 from .booking import schedule_bookings
-from .config_validator import validate_config_and_activities
+from .config_validator import validate_activities, validate_config
 
 logger = get_logger(__name__)
 
@@ -19,10 +19,15 @@ def run_service(
     retry_delay_minutes: int,
     time_zone: str = "Europe/Madrid",
 ) -> None:
+
+    # Validate the configuration file
+    validate_config(config)
+
     bot = SportBot()
     bot.login(config["email"], config["password"], config["centre"])
 
-    validate_config_and_activities(config, bot)
+    # Validate the activities in the configuration file
+    validate_activities(bot, config)
 
     for cls in config["classes"]:
         schedule_bookings(

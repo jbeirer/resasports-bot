@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pandas as pd
 import pytz
 
-from pysportbot.service.config_validator import validate_config, validate_config_and_activities
+from pysportbot.service.config_validator import validate_activities, validate_config
 
 # 1) Import each function from its exact module path:
 from pysportbot.service.scheduling import calculate_class_day, calculate_next_execution
@@ -103,10 +103,10 @@ class TestService(unittest.TestCase):
     # ------------------------------------------------------------------------
 
     @patch("pysportbot.service.config_validator.SportBot")  # Correct import path to where SportBot is used
-    def test_validate_config_and_activities_unknown_activity(self, mock_sportbot_class):
+    def test_validate_activities_unknown_activity(self, mock_sportbot_class):
         """
         Test that if the config specifies an activity not present in SportBot activities,
-        validate_config_and_activities raises an error.
+        validate_activities raises an error.
         The actual message is from ErrorMessages.activity_not_found(...),
         e.g. "No activity found with the name 'CrossFit'. Available activities are: Yoga."
         """
@@ -130,7 +130,7 @@ class TestService(unittest.TestCase):
         }
 
         with self.assertRaises(ValueError) as ctx:
-            validate_config_and_activities(config, mock_bot_instance)
+            validate_activities(mock_bot_instance, config)
 
         expected_message = ErrorMessages.activity_not_found("CrossFit", ["Yoga"])
         self.assertIn(expected_message, str(ctx.exception))

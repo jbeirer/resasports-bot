@@ -52,8 +52,3 @@ def validate_activities(bot: SportBot, config: Dict[str, Any]) -> None:
         if activity_name not in available_activity_names:
             raise ValueError(ErrorMessages.activity_not_found(activity_name, list(available_activity_names)))
     logger.info("All activities in the configuration file have been validated.")
-
-
-def validate_config_and_activities(config: Dict[str, Any], bot: SportBot) -> None:
-    validate_config(config)
-    validate_activities(bot, config)

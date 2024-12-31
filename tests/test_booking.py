@@ -12,7 +12,7 @@ def test_book_and_cancel_activity(bot):
 
     # Define the search range (next day to one week later)
     start_date = datetime.now() + timedelta(days=1)
-    end_date = start_date + timedelta(days=6)
+    end_date = start_date + timedelta(days=5)
 
     # Helper function to find the first bookable slot
     def find_bookable_slot():
@@ -29,6 +29,7 @@ def test_book_and_cancel_activity(bot):
                             if str(e) in [
                                 ErrorMessages.slot_already_booked(),
                                 ErrorMessages.slot_unavailable(),
+                                ErrorMessages.slot_not_bookable_yet(),
                             ]:
                                 continue
                             raise
