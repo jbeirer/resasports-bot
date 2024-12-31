@@ -20,10 +20,10 @@ pip install pysportbot
 ```python
 from pysportbot import SportBot
 
-# Create bot instance, will list available centres
+# Create bot instance, will list available centres is requested
 bot = SportBot(log_level='INFO', print_centres=False)
 
-# Connect to service with email and password
+# Connect to service with email and password as well as the name of the centre
 bot.login('email', 'password', 'centre')
 
 # List available activites
@@ -38,6 +38,84 @@ bot.book(activity='YourFavouriteGymClass', start_time = '2024-12-30 07:00:00')
 # Cancel an activity slot ona specific day and time
 bot.cancel(activity='YourFavouriteGymClass', start_time = '2024-12-30 07:00:00')
 ```
+
+## Advanced usage as service
+
+You can easily run `pysportbot` as a service to manage your bookings automatically with
+```bash
+python -m pysportbot.service --config config.json
+```
+The service requires a `json` configuration file that specifies your user data and how you would like to book your classes. Currently, three types of configurations are supported:
+
+##### 1. Book an upcoming class now
+
+Let's say you would like to book Yoga next Monday at 18:00:00, then your `config.json` would look like:
+
+```json
+{
+    "email": "your-email",
+    "password": "your-password",
+    "center": "your-gym-name",
+    "classes": [
+        {
+            "activity": "Yoga",
+            "class_day": "Monday",
+            "class_time": "18:00:00",
+            "booking_execution": "now",
+            "weekly": false
+        }
+    ]
+}
+```
+##### 2. Book an upcoming class on a specific day and time
+
+Let's say you would like to book Yoga next Monday at 18:00:00, but the execution of the booking should only happen on Friday at 07:30:00 then your `config.json` would look like:
+
+```json
+{
+    "email": "your-email",
+    "password": "your-password",
+    "center": "your-gym-name",
+    "classes": [
+        {
+            "activity": "Yoga",
+            "class_day": "Monday",
+            "class_time": "18:00:00",
+            "booking_execution": "Friday 07:30:00",
+            "weekly": false
+        }
+    ]
+}
+```
+##### 3. Schedule weekly booking at specific execution day and time
+Let's say you would like to book Yoga every Monday at 18:00:00 and the booking execution should be every Friday at 07:30:00 then your `config.json` would look like:
+
+```json
+{
+    "email": "your-email",
+    "password": "your-password",
+    "center": "your-gym-name",
+    "classes": [
+        {
+            "activity": "Yoga",
+            "class_day": "Monday",
+            "class_time": "18:00:00",
+            "booking_execution": "Friday 07:30:00",
+            "weekly": true
+        }
+    ]
+}
+```
+
+The service also provides various other options that can be inspected with
+
+```bash
+python -m pysportbot.service --help
+```
+Currently supported options include
+1.  ```--retry-attempts``` sets the number of retries attempted in case a booking attempt fails
+2. ```--retry-delay-minutes``` sets the delay in minutes between retries for weekly bookings
+3. ```--time_zone``` sets the time zone for the service
 
 ## LICENSE
 
