@@ -23,7 +23,7 @@ pip install pysportbot
 from pysportbot import SportBot
 
 # Create bot instance, will list available centres if requested
-bot = SportBot(log_level='INFO', print_centres=False)
+bot = SportBot(log_level='INFO', print_centres=False, time_zone = 'Europe/Madrid')
 
 # Connect to service with email and password as well as the name of the centre
 bot.login('email', 'password', 'centre')

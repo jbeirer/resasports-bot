@@ -1,5 +1,8 @@
 import logging
-from typing import ClassVar
+from datetime import datetime
+from typing import ClassVar, Optional
+
+import pytz
 
 from .errors import ErrorMessages
 
@@ -14,6 +17,32 @@ class ColorFormatter(logging.Formatter):
         "ERROR": "\033[91m",  # Red
         "RESET": "\033[0m",  # Reset
     }
+
+    def __init__(self, fmt: str, datefmt: str, tz: pytz.BaseTzInfo) -> None:
+        """
+        Initialize the formatter with a specific timezone.
+
+        Args:
+            fmt (str): The log message format.
+            datefmt (str): The date format.
+            tz (pytz.BaseTzInfo): The timezone for log timestamps.
+        """
+        super().__init__(fmt, datefmt)
+        self.timezone = tz
+
+    def formatTime(self, record: logging.LogRecord, datefmt: Optional[str] = None) -> str:
+        """
+        Override to format the time in the desired timezone.
+
+        Args:
+            record (logging.LogRecord): The log record.
+            datefmt (Optional[str]): The date format.
+
+        Returns:
+            str: The formatted timestamp.
+        """
+        record_time = datetime.fromtimestamp(record.created, self.timezone)
+        return record_time.strftime(datefmt or self.default_time_format)
 
     def format(self, record: logging.LogRecord) -> str:
         """
@@ -30,12 +59,13 @@ class ColorFormatter(logging.Formatter):
         return super().format(record)
 
 
-def setup_logger(level: str = "INFO") -> None:
+def setup_logger(level: str = "INFO", timezone: str = "Europe/Madrid") -> None:
     """
-    Configure the root logger with color-coded output.
+    Configure the root logger with color-coded output in the specified timezone.
 
     Args:
         level (str): The desired logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+        timezone (str): The desired timezone for log timestamps (e.g., Europe/Madrid).
     """
     root_logger = logging.getLogger()
     root_logger.setLevel(logging._nameToLevel[level.upper()])
@@ -43,7 +73,12 @@ def setup_logger(level: str = "INFO") -> None:
     if not root_logger.hasHandlers():  # Avoid duplicate handlers
         handler = logging.StreamHandler()
         handler.setLevel(logging._nameToLevel[level.upper()])
-        formatter = ColorFormatter("[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+        tz = pytz.timezone(timezone)
+        formatter = ColorFormatter(
+            "[%(asctime)s] [%(levelname)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            tz=tz,
+        )
         handler.setFormatter(formatter)
         root_logger.addHandler(handler)
 

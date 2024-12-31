@@ -1,3 +1,5 @@
+# pysportbot/sportbot.py
+
 import logging
 from typing import Optional
 
@@ -15,10 +17,12 @@ from .utils.logger import set_log_level, setup_logger
 class SportBot:
     """Unified interface for interacting with the booking system."""
 
-    def __init__(self, log_level: str = "INFO", print_centres: bool = False) -> None:
+    def __init__(self, log_level: str = "INFO", print_centres: bool = False, time_zone: str = "Europe/Madrid") -> None:
         setup_logger(log_level)
         self._logger = logging.getLogger("SportBot")
         self._logger.info("Initializing SportBot...")
+        self._logger.info(f"Log level: {log_level}")
+        self._logger.info(f"Time zone: {time_zone}")
         self._centres = Centres(print_centres)
         self._session: Session = Session()
         self._auth: Optional[Authenticator] = None
@@ -32,7 +36,6 @@ class SportBot:
         self._logger.info(f"Log level changed to {log_level}.")
 
     def login(self, email: str, password: str, centre: str) -> None:
-
         # Check if the selected centre is valid
         self._centres.check_centre(centre)
         self._logger.info(f"Selected centre: {centre}")

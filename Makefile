@@ -19,11 +19,11 @@ check: ## Run code quality tools.
 .PHONY: test
 test: ## Test all and generate code coverage report
 	@echo "🚀 Testing code: Running all tests with code coverage"
-	@poetry run pytest -s --cov --cov-config=pyproject.toml --cov-report=xml
+	@poetry run pytest --cov --cov-config=pyproject.toml --cov-report=xml
 
 test-%: ## Test a specific test case with pytest, e.g. make test-load_geometry
 	@echo "🚀 Testing code: Running the specified test case"
-	@poetry run pytest -s -k $*
+	@poetry run pytest -k $*
 
 .PHONY: build
 build: clean-build ## Build wheel file using poetry
