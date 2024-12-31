@@ -1,3 +1,5 @@
+# No queues. Just gains.
+
 <img src=https://github.com/jbeirer/resasports-bot/raw/main/docs/logo.png alt="Logo" width="250">
 
 
