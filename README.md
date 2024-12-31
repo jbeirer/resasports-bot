@@ -45,7 +45,7 @@ You can easily run `pysportbot` as a service to manage your bookings automatical
 ```bash
 python -m pysportbot.service --config config.json
 ```
-The service requires a `json` configuration file that specifies your user data and how you would like to book your classes. Currently, three types of configurations are supported:
+The service requires a `json` configuration file that specifies your user data and how you would like to book your classes. Currently, three types of configuration are supported:
 
 ##### 1. Book an upcoming class now
 
