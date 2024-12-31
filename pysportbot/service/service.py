@@ -25,7 +25,7 @@ def run_service(
     # Validate the configuration file
     validate_config(config)
     # Initialize the SportBot instance
-    bot = SportBot(log_level=log_level)
+    bot = SportBot(log_level=log_level, time_zone=time_zone)
     bot.login(config["email"], config["password"], config["centre"])
 
     # Validate the activities in the configuration file

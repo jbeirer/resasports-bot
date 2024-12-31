@@ -23,7 +23,7 @@ pip install pysportbot
 from pysportbot import SportBot
 
 # Create bot instance, will list available centres if requested
-bot = SportBot(log_level='INFO', print_centres=False)
+bot = SportBot(log_level='INFO', print_centres=False, time_zone = 'Europe/Madrid')
 
 # Connect to service with email and password as well as the name of the centre
 bot.login('email', 'password', 'centre')
@@ -117,7 +117,7 @@ python -m pysportbot.service --help
 Currently supported options include
 1.  ```--retry-attempts``` sets the number of retries attempted in case a booking attempt fails
 2. ```--retry-delay-minutes``` sets the delay in minutes between retries for weekly bookings
-3. ```--time-zone``` sets the time zone for the service
+3. ```--time-zone``` sets the time zone for the service (e.g. Europe/Madrid)
 4. ```--log-level``` sets the log-level of the service (e.g. DEBUG, INFO, WARNING, ERROR)
 
 ## LICENSE
