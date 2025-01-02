@@ -1,7 +1,7 @@
 # tests/test_service.py
 
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pandas as pd
@@ -459,10 +459,16 @@ class TestService(unittest.TestCase):
         """
         Ensure the service correctly matches a slot with a specific time.
         """
+        today = datetime.now()
+        days_until_tuesday = (1 - today.weekday()) % 7  # 1 = Tuesday
+        next_tuesday = today + timedelta(days=days_until_tuesday)
+        next_tuesday_str = next_tuesday.strftime("%Y-%m-%d 12:00:00")
+        next_tuesday_later_str = next_tuesday.strftime("%Y-%m-%d 15:00:00")
+
         mock_bot_instance = mock_sportbot_class.return_value
         mock_bot_instance.activities.return_value = pd.DataFrame({"name_activity": ["Gimnasio"]})
         mock_bot_instance.daily_slots.return_value = pd.DataFrame(
-            {"start_timestamp": ["2024-12-31 12:00:00", "2024-12-31 15:00:00"]}
+            {"start_timestamp": [next_tuesday_str, next_tuesday_later_str]}
         )
 
         config = {
@@ -488,8 +494,8 @@ class TestService(unittest.TestCase):
             time_zone="Europe/Madrid",
         )
 
-        # Assert that the correct slot was booked
-        mock_bot_instance.book.assert_called_with(activity="Gimnasio", start_time="2024-12-31 12:00:00")
+        # Ensure the correct slot was booked
+        mock_bot_instance.book.assert_called_with(activity="Gimnasio", start_time=next_tuesday_str)
 
 
 if __name__ == "__main__":
