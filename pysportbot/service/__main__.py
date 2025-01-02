@@ -10,10 +10,10 @@ from .service import run_service
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the pysportbot as a service.")
     parser.add_argument("--config", type=str, required=True, help="Path to the JSON configuration file.")
-    parser.add_argument("--offset-seconds", type=int, default=10, help="Time offset in seconds before booking.")
+    parser.add_argument("--offset-seconds", type=int, default=5, help="Time offset in seconds before booking.")
     parser.add_argument("--retry-attempts", type=int, default=3, help="Number of retry attempts for weekly bookings.")
     parser.add_argument(
-        "--retry-delay-minutes", type=int, default=2, help="Delay in minutes between retries for weekly bookings."
+        "--retry-delay-minutes", type=int, default=1, help="Delay in minutes between retries for weekly bookings."
     )
     parser.add_argument("--time-zone", type=str, default="Europe/Madrid", help="Timezone for the service.")
     parser.add_argument("--log-level", type=str, default="INFO", help="Logging level for the service.")
