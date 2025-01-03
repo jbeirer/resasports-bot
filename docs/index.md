@@ -59,13 +59,13 @@ Let's say you would like to book Yoga next Monday at 18:00:00, then your `config
     "email": "your-email",
     "password": "your-password",
     "center": "your-gym-name",
+    "booking_execution": "now",
+
     "classes": [
         {
             "activity": "Yoga",
             "class_day": "Monday",
             "class_time": "18:00:00",
-            "booking_execution": "now",
-            "weekly": false
         }
     ]
 }
@@ -79,32 +79,13 @@ Let's say you would like to book Yoga next Monday at 18:00:00, but the execution
     "email": "your-email",
     "password": "your-password",
     "center": "your-gym-name",
-    "classes": [
-        {
-            "activity": "Yoga",
-            "class_day": "Monday",
-            "class_time": "18:00:00",
-            "booking_execution": "Friday 07:30:00",
-            "weekly": false
-        }
-    ]
-}
-```
-##### 3. Schedule weekly booking at specific execution day and time
-Let's say you would like to book Yoga every Monday at 18:00:00 and the booking execution should be every Friday at 07:30:00 then your `config.json` would look like:
+    "booking_execution": "Friday 07:30:00",
 
-```json
-{
-    "email": "your-email",
-    "password": "your-password",
-    "center": "your-gym-name",
     "classes": [
         {
             "activity": "Yoga",
             "class_day": "Monday",
             "class_time": "18:00:00",
-            "booking_execution": "Friday 07:30:00",
-            "weekly": true
         }
     ]
 }
