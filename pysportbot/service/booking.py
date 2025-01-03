@@ -97,7 +97,7 @@ def attempt_booking(
     logger.error(f"Failed to book '{activity}' after {retry_attempts} attempts.")
 
 
-def schedule_bookings_parallel(
+def schedule_bookings(
     bot: SportBot,
     classes: List[Dict[str, Any]],
     booking_execution: str,

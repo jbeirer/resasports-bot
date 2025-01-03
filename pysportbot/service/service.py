@@ -2,7 +2,7 @@ import os
 from typing import Any, Dict
 
 from pysportbot import SportBot
-from pysportbot.service.booking import schedule_bookings_parallel
+from pysportbot.service.booking import schedule_bookings
 from pysportbot.service.config_validator import validate_activities, validate_config
 from pysportbot.utils.logger import get_logger
 
@@ -45,7 +45,7 @@ def run_service(
     logger.info(f"Using up to {max_threads} threads for booking {len(config['classes'])} activities.")
 
     # Schedule bookings in parallel
-    schedule_bookings_parallel(
+    schedule_bookings(
         bot,
         config["classes"],
         config["booking_execution"],
