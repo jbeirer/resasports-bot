@@ -92,7 +92,7 @@ class Activities:
             logger.warning(warning_msg)
             return DataFrame()
 
-        logger.info(f"Daily slots fetched for '{activity_name}' on {day}.")
+        logger.debug(f"Daily slots fetched for '{activity_name}' on {day}.")
 
         # Filter desired columns
         columns = [
