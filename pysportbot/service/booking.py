@@ -44,9 +44,9 @@ def attempt_booking(
     activity: str,
     class_day: str,
     class_time: str,
-    offset_seconds: int,
+    booking_delay: int,
     retry_attempts: int = 1,
-    retry_delay_minutes: int = 0,
+    retry_delay: int = 0,
     time_zone: str = "Europe/Madrid",
 ) -> None:
     """
@@ -57,9 +57,9 @@ def attempt_booking(
         activity (str): Activity name.
         class_day (str): Day of the class.
         class_time (str): Time of the class.
-        offset_seconds (int): Delay before attempting booking.
+        booking_delay (int): Delay before attempting booking.
         retry_attempts (int): Number of retry attempts.
-        retry_delay_minutes (int): Delay between retries.
+        retry_delay (int): Delay between retries.
         time_zone (str): Time zone for execution.
     """
     for attempt_num in range(1, retry_attempts + 1):
@@ -72,9 +72,6 @@ def attempt_booking(
             matching_slots = available_slots[available_slots["start_timestamp"] == f"{booking_date} {class_time}"]
             if matching_slots.empty:
                 _raise_no_matching_slots_error(activity, class_time, booking_date)
-
-            logger.info(f"Waiting {offset_seconds} seconds before attempting booking.")
-            time.sleep(offset_seconds)
 
             slot_id = matching_slots.iloc[0]["start_timestamp"]
             logger.info(f"Attempting to book '{activity}' at {slot_id} (Attempt {attempt_num}/{retry_attempts}).")
@@ -89,8 +86,8 @@ def attempt_booking(
                 return
 
             if attempt_num < retry_attempts:
-                logger.info(f"Retrying in {retry_delay_minutes} minutes...")
-                time.sleep(retry_delay_minutes * 60)
+                logger.info(f"Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
         else:
             # If the booking attempt succeeds, log and exit
             logger.info(f"Successfully booked '{activity}' at {slot_id}.")
@@ -104,9 +101,9 @@ def schedule_bookings_parallel(
     bot: SportBot,
     classes: List[Dict[str, Any]],
     booking_execution: str,
-    offset_seconds: int,
+    booking_delay: int,
     retry_attempts: int,
-    retry_delay_minutes: int,
+    retry_delay: int,
     time_zone: str,
     max_threads: int,
 ) -> None:
@@ -117,9 +114,9 @@ def schedule_bookings_parallel(
         bot (SportBot): The SportBot instance.
         classes (list): List of class configurations.
         booking_execution (str): Global execution time for all bookings.
-        offset_seconds (int): Delay before each booking attempt.
+        booking_delay (int): Delay before each booking attempt.
         retry_attempts (int): Number of retry attempts.
-        retry_delay_minutes (int): Delay between retries.
+        retry_delay (int): Delay between retries.
         time_zone (str): Timezone for booking.
         max_threads (int): Maximum number of threads to use.
     """
@@ -130,6 +127,10 @@ def schedule_bookings_parallel(
     # Wait globally before starting bookings
     wait_for_execution(booking_execution, time_zone)
 
+    # Global booking delay
+    logger.info(f"Waiting {booking_delay} seconds before attempting booking.")
+    time.sleep(booking_delay)
+
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
         future_to_class = {
             executor.submit(
@@ -138,9 +139,9 @@ def schedule_bookings_parallel(
                 cls["activity"],
                 cls["class_day"],
                 cls["class_time"],
-                offset_seconds,
+                booking_delay,
                 retry_attempts,
-                retry_delay_minutes,
+                retry_delay,
                 time_zone,
             ): cls
             for cls in classes

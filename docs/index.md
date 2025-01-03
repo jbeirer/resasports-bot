@@ -98,7 +98,7 @@ python -m pysportbot.service --help
 ```
 Currently supported options include
 1.  ```--retry-attempts``` sets the number of retries attempted in case a booking attempt fails
-2. ```--retry-delay-minutes``` sets the delay in minutes between retries for weekly bookings
+2. ```--retry-delay``` sets the delay in seconds between retries for weekly bookings
 3. ```--time-zone``` sets the time zone for the service
 4. ```--log-level``` sets the log-level of the service (e.g. DEBUG, INFO, WARNING, ERROR)
 

@@ -9,9 +9,9 @@ from pysportbot.utils.logger import get_logger
 
 def run_service(
     config: Dict[str, Any],
-    offset_seconds: int,
+    booking_delay: int,
     retry_attempts: int,
-    retry_delay_minutes: int,
+    retry_delay: int,
     time_zone: str = "Europe/Madrid",
     log_level: str = "INFO",
 ) -> None:
@@ -20,9 +20,9 @@ def run_service(
 
     Args:
         config (dict): Configuration dictionary for booking service.
-        offset_seconds (int): Delay before each booking attempt.
+        booking_delay (int): Delay before each booking attempt.
         retry_attempts (int): Number of retry attempts.
-        retry_delay_minutes (int): Delay between retry attempts in minutes.
+        retry_delay (int): Delay between retry attempts in minutes.
         time_zone (str): Time zone for the booking.
         log_level (str): Logging level for the service.
     """
@@ -49,9 +49,9 @@ def run_service(
         bot,
         config["classes"],
         config["booking_execution"],
-        offset_seconds,
+        booking_delay,
         retry_attempts,
-        retry_delay_minutes,
+        retry_delay,
         time_zone,
         max_threads,
     )
