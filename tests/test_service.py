@@ -50,8 +50,8 @@ class TestService(unittest.TestCase):
             "centre": "my-gim",
             "classes": [
                 {
-                    # Missing "activity", "class_day", and "class_time"
-                    "weekly": True
+                    # Missing "activity" among others
+                    "class_day": "Monday"
                 }
             ],
             "booking_execution": "Monday 07:30:00",

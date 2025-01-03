@@ -20,11 +20,7 @@ class ErrorMessages:
 
     @staticmethod
     def invalid_class_definition() -> str:
-        return "Each class must include 'activity', 'class_day', " "'class_time', 'booking_execution', and 'weekly'."
-
-    @staticmethod
-    def invalid_weekly_now() -> str:
-        return "Invalid combination: cannot use weekly=True with booking_execution='now'."
+        return "Each class must include 'activity', 'class_day', " "'class_time'"
 
     @staticmethod
     def invalid_booking_execution_format() -> str:
