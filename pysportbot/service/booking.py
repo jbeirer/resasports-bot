@@ -130,9 +130,9 @@ def schedule_bookings(
     logger.debug("Re-authenticating before booking.")
     try:
         bot.login(config["email"], config["password"], config["centre"])
-    except Exception as e:
-        logger.error(f"Re-authentication failed: {str(e)}")
-        raise ValueError("Failed to re-authenticate before booking execution") from e
+    except Exception:
+        logger.exception("Re-authentication failed before booking execution.")
+        raise
 
     # Submit bookings in parallel
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
