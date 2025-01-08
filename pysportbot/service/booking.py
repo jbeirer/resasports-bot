@@ -44,7 +44,6 @@ def attempt_booking(
     activity: str,
     class_day: str,
     class_time: str,
-    booking_delay: int,
     retry_attempts: int = 1,
     retry_delay: int = 0,
     time_zone: str = "Europe/Madrid",
@@ -57,7 +56,6 @@ def attempt_booking(
         activity (str): Activity name.
         class_day (str): Day of the class.
         class_time (str): Time of the class.
-        booking_delay (int): Delay before attempting booking.
         retry_attempts (int): Number of retry attempts.
         retry_delay (int): Delay between retries.
         time_zone (str): Time zone for execution.
@@ -66,7 +64,6 @@ def attempt_booking(
         booking_date = calculate_class_day(class_day, time_zone).strftime("%Y-%m-%d")
 
         try:
-            logger.info(f"Fetching available slots for '{activity}' on {booking_date}.")
             available_slots = bot.daily_slots(activity=activity, day=booking_date)
 
             matching_slots = available_slots[available_slots["start_timestamp"] == f"{booking_date} {class_time}"]
@@ -89,12 +86,11 @@ def attempt_booking(
                 logger.info(f"Retrying in {retry_delay} seconds...")
                 time.sleep(retry_delay)
         else:
-            # If the booking attempt succeeds, log and exit
-            logger.info(f"Successfully booked '{activity}' at {slot_id}.")
             return
 
     # If all attempts fail, log an error
-    logger.error(f"Failed to book '{activity}' after {retry_attempts} attempts.")
+    # Do not raise an exception to allow other bookings to proceed
+    logger.error(f"Failed to book '{activity}' at {class_time} on {booking_date} after {retry_attempts} attempts.")
 
 
 def schedule_bookings(
@@ -139,7 +135,6 @@ def schedule_bookings(
                 cls["activity"],
                 cls["class_day"],
                 cls["class_time"],
-                booking_delay,
                 retry_attempts,
                 retry_delay,
                 time_zone,
@@ -152,6 +147,5 @@ def schedule_bookings(
             activity, class_time = cls["activity"], cls["class_time"]
             try:
                 future.result()
-                logger.info(f"Booking for '{activity}' at {class_time} completed successfully.")
             except Exception:
                 logger.exception(f"Booking for '{activity}' at {class_time} failed.")

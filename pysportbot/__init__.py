@@ -83,6 +83,8 @@ class SportBot:
         return df.head(limit) if limit else df
 
     def book(self, activity: str, start_time: str) -> None:
+
+        self._logger.debug(f"Attempting to book class '{activity}' on {start_time}")
         if not self._is_logged_in:
             self._logger.error(ErrorMessages.not_logged_in())
             raise PermissionError(ErrorMessages.not_logged_in())
@@ -98,9 +100,18 @@ class SportBot:
             self._logger.error(error_msg)
             raise IndexError(error_msg)
 
-        self._bookings.book(matching_slot.iloc[0]["id_activity_calendar"])
+        slot_id = matching_slot.iloc[0]["id_activity_calendar"]
+
+        try:
+            self._bookings.book(slot_id)
+            self._logger.info(f"Successfully booked class '{activity}' on {start_time}")
+        except ValueError:
+            self._logger.exception(f"Failed to book class '{activity}' on {start_time}")
+            raise
 
     def cancel(self, activity: str, start_time: str) -> None:
+
+        self._logger.debug(f"Attempting to cancel class '{activity}' on {start_time}")
         if not self._is_logged_in:
             self._logger.error(ErrorMessages.not_logged_in())
             raise PermissionError(ErrorMessages.not_logged_in())
@@ -116,4 +127,10 @@ class SportBot:
             self._logger.error(error_msg)
             raise IndexError(error_msg)
 
-        self._bookings.cancel(matching_slot.iloc[0]["id_activity_calendar"])
+        slot_id = matching_slot.iloc[0]["id_activity_calendar"]
+        try:
+            self._bookings.cancel(slot_id)
+            self._logger.info(f"Successfully cancelled class '{activity}' on {start_time}")
+        except ValueError:
+            self._logger.exception(f"Failed to cancel class '{activity}' on {start_time}")
+            raise

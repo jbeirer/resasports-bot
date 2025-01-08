@@ -56,7 +56,7 @@ class Activities:
             ValueError: If the specified activity is not found.
             RuntimeError: If slots cannot be fetched.
         """
-        logger.info(f"Fetching daily slots for '{activity_name}' on {day}...")
+        logger.info(f"Fetching available slots for '{activity_name}' on {day}...")
 
         # Check if the activity exists
         activity_match = df_activities[df_activities["name_activity"] == activity_name]

@@ -9,7 +9,9 @@ from .errors import ErrorMessages
 
 
 class ColorFormatter(logging.Formatter):
-    """Custom formatter to add color-coded log levels and thread information."""
+    """Custom formatter to add color-coded log levels and thread information,
+    while aligning log levels in the output as `[INFO]    message`.
+    """
 
     COLORS: ClassVar[dict[str, str]] = {
         "DEBUG": "\033[94m",  # Blue
@@ -31,7 +33,9 @@ class ColorFormatter(logging.Formatter):
         "\033[35m",  # Purple
     ]
 
-    thread_colors: dict[str, str]
+    # The longest built-in level is WARNING = 7 letters => "[WARNING]" is 0 characters
+    # so let's set this to 9 to align them nicely.
+    _MAX_BRACKET_LEN = 9
 
     def __init__(self, fmt: str, datefmt: str, tz: pytz.BaseTzInfo, include_threads: bool = False) -> None:
         """
@@ -41,47 +45,46 @@ class ColorFormatter(logging.Formatter):
             fmt (str): The log message format.
             datefmt (str): The date format.
             tz (pytz.BaseTzInfo): The timezone for log timestamps.
-            include_threads (bool): Whether to include thread information in logs.
+            include_threads (bool): Whether to include thread info in logs.
         """
         super().__init__(fmt, datefmt)
         self.timezone = tz
         self.include_threads = include_threads
-        self.thread_colors = {}  # Initialize as an empty dictionary
+        self.thread_colors: dict[str, str] = {}  # Initialize empty dictionary
 
     def formatTime(self, record: logging.LogRecord, datefmt: Optional[str] = None) -> str:
         """
         Override to format the time in the desired timezone.
-
-        Args:
-            record (logging.LogRecord): The log record.
-            datefmt (Optional[str]): The date format.
-
-        Returns:
-            str: The formatted timestamp.
         """
         record_time = datetime.fromtimestamp(record.created, self.timezone)
         return record_time.strftime(datefmt or self.default_time_format)
 
     def format(self, record: logging.LogRecord) -> str:
         """
-        Format the log record with color-coded log levels and optional thread information.
-
-        Args:
-            record (logging.LogRecord): The log record to format.
-
-        Returns:
-            str: The formatted log record as a string.
+        Format the log record with color-coded (and bracketed) log levels, plus optional thread info.
+        Example final output: "[INFO]    message".
         """
-        color = self.COLORS.get(record.levelname, self.COLORS["RESET"])
-        record.levelname = f"{color}{record.levelname}{self.COLORS['RESET']}"
+        raw_level_name = record.levelname
 
+        # Build the bracketed level, e.g. "[INFO]"
+        bracketed_level = f"[{raw_level_name}]"
+
+        # Pad it to a fixed width (e.g. 10) so shorter levels also line up
+        padded_bracketed_level = f"{bracketed_level:<{self._MAX_BRACKET_LEN}}"
+
+        # Colorize the padded bracketed string
+        color = self.COLORS.get(raw_level_name, self.COLORS["RESET"])
+        colored_bracketed = f"{color}{padded_bracketed_level}{self.COLORS['RESET']}"
+
+        # We'll store this in a custom attribute
+        record.colored_bracketed_level = colored_bracketed
+
+        # Handle the thread info if requested
         if self.include_threads:
             thread_name = threading.current_thread().name
             if thread_name == "MainThread":
-                # Skip adding thread info for the main thread
                 record.thread_info = ""
             else:
-                # Map thread names to simplified format (Thread 0, Thread 1, etc.)
                 if thread_name not in self.thread_colors:
                     color_index = len(self.thread_colors) % len(self.THREAD_COLORS)
                     self.thread_colors[thread_name] = self.THREAD_COLORS[color_index]
@@ -101,25 +104,24 @@ def setup_logger(level: str = "INFO", timezone: str = "Europe/Madrid") -> None:
 
     Args:
         level (str): The desired logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
-        timezone (str): The desired timezone for log timestamps (e.g., Europe/Madrid).
+        timezone (str): The desired timezone for log timestamps (e.g., 'Europe/Madrid').
     """
     root_logger = logging.getLogger()
     root_logger.setLevel(logging._nameToLevel[level.upper()])
 
-    if not root_logger.hasHandlers():  # Avoid duplicate handlers
+    # Prevent adding multiple handlers if already set up
+    if not root_logger.hasHandlers():
         handler = logging.StreamHandler()
         handler.setLevel(logging._nameToLevel[level.upper()])
+
         tz = pytz.timezone(timezone)
 
-        # Default formatter for the main thread
-        thread_formatter = ColorFormatter(
-            "[%(asctime)s] [%(levelname)s] %(thread_info)s%(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-            tz=tz,
-            include_threads=True,
-        )
+        # IMPORTANT: Note the %(colored_bracketed_level)s placeholder
+        fmt = "[%(asctime)s] %(colored_bracketed_level)s %(thread_info)s%(message)s"
 
-        handler.setFormatter(thread_formatter)
+        formatter = ColorFormatter(fmt=fmt, datefmt="%Y-%m-%d %H:%M:%S", tz=tz, include_threads=True)
+        handler.setFormatter(formatter)
+
         root_logger.addHandler(handler)
 
 
@@ -143,11 +145,5 @@ def set_log_level(level: str) -> None:
 def get_logger(name: str) -> logging.Logger:
     """
     Retrieve a logger by name.
-
-    Args:
-        name (str): The name of the logger.
-
-    Returns:
-        logging.Logger: The logger instance.
     """
     return logging.getLogger(name)

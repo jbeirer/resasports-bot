@@ -27,7 +27,7 @@ class Bookings:
             ValueError: If the slot is already booked or unavailable.
             RuntimeError: If an unknown error occurs during booking.
         """
-        logger.info(f"Attempting to book slot {slot_id}...")
+        logger.debug(f"Attempting to book slot {slot_id}...")
 
         # Payload for booking
         payload = {
@@ -46,7 +46,7 @@ class Bookings:
 
         # Handle response
         if response_json["error"] == 0:
-            logger.info(f"Successfully booked slot {slot_id}.")
+            logger.debug(f"Successfully booked slot {slot_id}.")
         elif response_json["error"] == 5:
             logger.warning(f"Slot {slot_id} is already booked.")
             raise ValueError(ErrorMessages.slot_already_booked())
@@ -70,7 +70,7 @@ class Bookings:
         Raises:
             ValueError: If the cancellation fails.
         """
-        logger.info(f"Attempting to cancel slot {slot_id}...")
+        logger.debug(f"Attempting to cancel slot {slot_id}...")
 
         # Payload for cancellation
         payload = {"id_activity_calendar": slot_id}
@@ -81,7 +81,7 @@ class Bookings:
 
         # Handle response
         if response_json["success"]:
-            logger.info(f"Successfully cancelled slot {slot_id}.")
+            logger.debug(f"Successfully cancelled slot {slot_id}.")
         else:
             logger.warning(f"Slot {slot_id} was not booked.")
             raise ValueError(ErrorMessages.cancellation_failed())
