@@ -35,6 +35,8 @@ def run_service(
     validate_config(config)
 
     # Initialize the SportBot and authenticate
+    # Note: will re-authenticate before booking execution
+    # to ensure the session is still valid
     bot = SportBot(log_level=log_level, time_zone=time_zone)
     bot.login(config["email"], config["password"], config["centre"])
 
@@ -48,8 +50,7 @@ def run_service(
     # Schedule bookings in parallel
     schedule_bookings(
         bot,
-        config["classes"],
-        config["booking_execution"],
+        config,
         booking_delay,
         retry_attempts,
         retry_delay,

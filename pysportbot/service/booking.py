@@ -1,7 +1,7 @@
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import pytz
 
@@ -95,8 +95,7 @@ def attempt_booking(
 
 def schedule_bookings(
     bot: SportBot,
-    classes: List[Dict[str, Any]],
-    booking_execution: str,
+    config: Dict[str, Any],
     booking_delay: int,
     retry_attempts: int,
     retry_delay: int,
@@ -117,16 +116,21 @@ def schedule_bookings(
         max_threads (int): Maximum number of threads to use.
     """
     # Log planned bookings
-    for cls in classes:
+    for cls in config["classes"]:
         logger.info(f"Scheduled to book '{cls['activity']}' next {cls['class_day']} at {cls['class_time']}.")
 
     # Wait globally before starting bookings
-    wait_for_execution(booking_execution, time_zone)
+    wait_for_execution(config["booking_execution"], time_zone)
 
     # Global booking delay
     logger.info(f"Waiting {booking_delay} seconds before attempting booking.")
     time.sleep(booking_delay)
 
+    # Re-authenticate before booking
+    logger.debug("Re-authenticating before booking.")
+    bot.login(config["email"], config["password"], config["centre"])
+
+    # Submit bookings in parallel
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
         future_to_class = {
             executor.submit(
@@ -139,7 +143,7 @@ def schedule_bookings(
                 retry_delay,
                 time_zone,
             ): cls
-            for cls in classes
+            for cls in config["classes"]
         }
 
         for future in as_completed(future_to_class):
