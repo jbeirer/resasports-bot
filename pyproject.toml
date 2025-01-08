@@ -11,11 +11,10 @@ readme = "README.md"
 packages = [
   { include = "pysportbot" }
 ]
-requires-python = ">=3.9,<3.13"
-dynamic = ["dependencies"]
+dynamic = ["requires-python", "dependencies"]
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.13"
+python = ">=3.9,<3.14"
 requests = "^2.32.3"
 beautifulsoup4 = "^4.12.3"
 pandas = "^2.2.3"
