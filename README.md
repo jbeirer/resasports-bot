@@ -91,7 +91,7 @@ Let's say you would like to book Yoga next Monday at 18:00:00, but the execution
 }
 ```
 
-**Note:** By default, pysportbot will be attempt to execute *N* bookings in parallel, where *N* is the number of available cores on your machine.
+**Note:** By default, PySportBot will attempt to execute *N* bookings in parallel, where *N* is the number of available cores on your machine.
 
 The service also provides various other options that can be inspected with
 
