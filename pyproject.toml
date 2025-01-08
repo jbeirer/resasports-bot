@@ -1,14 +1,18 @@
-[tool.poetry]
+[project]
 name = "pysportbot"
 version = "0.0.1"
-description = " A python-based bot for automatic resasports slot booking"
-authors = ["Joshua Falco Beirer <jbeirer@cern.ch>"]
+description = "A python-based bot for automatic resasports slot booking"
+authors = [
+  { name = "Joshua Falco Beirer", email = "jbeirer@cern.ch" }
+]
 repository = "https://github.com/jbeirer/resasports-bot"
 documentation = "https://jbeirer.github.io/resasports-bot/"
 readme = "README.md"
 packages = [
-  {include = "pysportbot"}
+  { include = "pysportbot" }
 ]
+requires-python = ">=3.9,<3.13"
+dynamic = ["dependencies"]
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.13"
