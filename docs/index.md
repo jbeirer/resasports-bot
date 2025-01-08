@@ -90,6 +90,7 @@ Let's say you would like to book Yoga next Monday at 18:00:00, but the execution
     ]
 }
 ```
+**Note:** By default, pysportbot will be attempt to execute *N* bookings in parallel, where *N* is the number of available cores on your machine.
 
 The service also provides various other options that can be inspected with
 
@@ -97,12 +98,14 @@ The service also provides various other options that can be inspected with
 python -m pysportbot.service --help
 ```
 Currently supported options include
-1.  ```--retry-attempts``` sets the number of retries attempted in case a booking attempt fails
-2. ```--retry-delay``` sets the delay in seconds between retries for booking retries
-3. ```--time-zone``` sets the time zone for the service
-4. ```--log-level``` sets the log-level of the service (e.g. DEBUG, INFO, WARNING, ERROR)
+1. ```--booking-delay``` sets a global delay in seconds before booking execution [default: 0]
+2. ```--retry-attempts``` sets the number of retries attempted in case a booking attempt fails [default: 3]
+3. ```--retry-delay``` sets the delay in seconds between booking retries [default: 5]
+4. ```--time-zone``` sets the time zone for the service [default: Europe/Madrid]
+5. ```--log-level``` sets the log-level of the service [default: INFO]
+6. ```--max-threads``` limits the number of used threads for parallel bookings [default: -1]
 
 ## LICENSE
 
 pysportbot is free of use and open-source. All versions are
-published under the [MIT License](https://github.com/jbeirer/pysportbot/blob/main/LICENSE).
+published under the [MIT License](https://github.com/jbeirer/resasports-bot/blob/main/LICENSE).
