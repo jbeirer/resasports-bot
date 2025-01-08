@@ -16,10 +16,13 @@ class TestLogger(unittest.TestCase):
         self.log_stream = StringIO()  # Capture logging output
         self.initial_timezone = pytz.timezone("Europe/Madrid")
 
-        # Configure a test handler with ColorFormatter
+        # Configure a test handler with ColorFormatter.
         self.handler = logging.StreamHandler(self.log_stream)
         self.formatter = ColorFormatter(
-            "[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S", tz=self.initial_timezone
+            "[%(asctime)s] %(colored_bracketed_level)s %(thread_info)s%(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            tz=self.initial_timezone,
+            include_threads=True,
         )
         self.handler.setFormatter(self.formatter)
         self.handler.setLevel(logging.NOTSET)  # Let the logger handle the level
@@ -70,7 +73,12 @@ class TestLogger(unittest.TestCase):
         self.assertNotIn("This should not appear.", log_output)
 
     def test_color_formatting(self):
-        """Test log levels include correct color codes."""
+        """
+        Test log levels include correct color codes, matching the actual padding:
+          - [INFO]   => 3 trailing spaces
+          - [WARNING] => 0 trailing spaces
+          - [ERROR]  => 2 trailing spaces
+        """
         setup_logger(level="INFO", timezone="Europe/Madrid")
         self.root_logger.info("Info message")
         self.root_logger.warning("Warning message")
@@ -79,10 +87,10 @@ class TestLogger(unittest.TestCase):
         self.handler.flush()
         log_output = self.log_stream.getvalue()
 
-        # Assert color codes are applied
-        self.assertIn("\033[92mINFO\033[0m", log_output)  # Green for INFO
-        self.assertIn("\033[93mWARNING\033[0m", log_output)  # Yellow for WARNING
-        self.assertIn("\033[91mERROR\033[0m", log_output)  # Red for ERROR
+        # Verify the bracketed level strings exactly:
+        self.assertIn("\033[92m[INFO]   \033[0m", log_output)  # Green for [INFO]
+        self.assertIn("\033[93m[WARNING]\033[0m", log_output)  # Yellow for [WARNING]
+        self.assertIn("\033[91m[ERROR]  \033[0m", log_output)  # Red for [ERROR]
 
     def test_invalid_log_level(self):
         """Test that invalid log levels raise a ValueError."""
@@ -149,8 +157,8 @@ class TestLogger(unittest.TestCase):
         self.handler.flush()
         log_output = self.log_stream.getvalue()
 
-        # Assert logger name appears in the output with colorized level
-        self.assertIn("[\033[92mINFO\033[0m] Test named logger.", log_output)
+        # The logger also pads "[INFO]" to 9 chars => "[INFO]   "
+        self.assertIn("\033[92m[INFO]   \033[0m Test named logger.", log_output)
 
 
 if __name__ == "__main__":
