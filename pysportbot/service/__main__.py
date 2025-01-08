@@ -16,7 +16,7 @@ def main() -> None:
     parser.add_argument("--time-zone", type=str, default="Europe/Madrid", help="Timezone for the service.")
     parser.add_argument("--log-level", type=str, default="INFO", help="Logging level for the service.")
     parser.add_argument(
-        "--max_threads",
+        "--max-threads",
         type=int,
         default=-1,
         help="Maxium number of threads to use for booking. -1 defaults to all available cores.",
