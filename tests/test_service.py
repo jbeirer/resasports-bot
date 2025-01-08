@@ -402,16 +402,22 @@ class TestBooking(unittest.TestCase):
 
         # 4. Everything else (bot, classes, etc.)
         mock_bot = MagicMock()
-        classes = [
-            {"activity": "Yoga", "class_day": "Monday", "class_time": "09:00:00"},
-            {"activity": "Boxing", "class_day": "Tuesday", "class_time": "10:00:00"},
-        ]
+
+        config = {
+            "email": "my@my.com",
+            "password": "pass",
+            "centre": "my-gim",
+            "booking_execution": "now",
+            "classes": [
+                {"activity": "Yoga", "class_day": "Monday", "class_time": "09:00:00"},
+                {"activity": "Boxing", "class_day": "Tuesday", "class_time": "10:00:00"},
+            ],
+        }
 
         # Call function under test
         schedule_bookings(
             bot=mock_bot,
-            classes=classes,
-            booking_execution="now",
+            config=config,
             booking_delay=2,
             retry_attempts=2,
             retry_delay=1,
@@ -425,7 +431,7 @@ class TestBooking(unittest.TestCase):
         mock_executor.assert_called_once_with(max_workers=2)
 
         # ThreadPoolExecutor.submit should have been called for each class:
-        self.assertEqual(mock_executor_instance.submit.call_count, len(classes))
+        self.assertEqual(mock_executor_instance.submit.call_count, len(config["classes"]))
         # as_completed was called with the dictionary of futures
         # but we only need to confirm it wasn't stuck
         self.assertTrue(mock_as_completed.called)
