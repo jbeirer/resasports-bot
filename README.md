@@ -98,13 +98,14 @@ The service also provides various other options that can be inspected with
 ```bash
 python -m pysportbot.service --help
 ```
-Currently supported options include
-1. ```--booking-delay``` sets a global delay in seconds before booking execution [default: 0]
-2. ```--retry-attempts``` sets the number of retries attempted in case a booking attempt fails [default: 3]
-3. ```--retry-delay``` sets the delay in seconds between booking retries [default: 5]
-4. ```--time-zone``` sets the time zone for the service [default: Europe/Madrid]
-5. ```--log-level``` sets the log-level of the service [default: INFO]
-6. ```--max-threads``` limits the number of used threads for parallel bookings [default: -1]
+Currently supported options include:
+
+1. `--booking-delay`: sets a global delay in seconds before booking execution [default: 0]
+2. `--retry-attempts`: sets the number of retries attempted in case a booking attempt fails [default: 3]
+3. `--retry-delay`: sets the delay in seconds between booking retries [default: 5]
+4. `--time-zone`: sets the time zone for the service [default: Europe/Madrid]
+5. `--log-level`: sets the log-level of the service [default: INFO]
+6. `--max-threads`: limits the number of used threads for parallel bookings [default: -1]
 
 ## LICENSE
 
