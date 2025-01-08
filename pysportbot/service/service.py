@@ -1,9 +1,9 @@
-import os
 from typing import Any, Dict
 
 from pysportbot import SportBot
 from pysportbot.service.booking import schedule_bookings
 from pysportbot.service.config_validator import validate_activities, validate_config
+from pysportbot.service.threading import get_n_threads
 from pysportbot.utils.logger import get_logger
 
 
@@ -14,6 +14,7 @@ def run_service(
     retry_delay: int,
     time_zone: str = "Europe/Madrid",
     log_level: str = "INFO",
+    max_threads: int = -1,
 ) -> None:
     """
     Run the booking service with the given configuration.
@@ -40,9 +41,9 @@ def run_service(
     # Validate activities in the configuration
     validate_activities(bot, config)
 
-    # Determine the number of threads
-    max_threads = min(len(config["classes"]), os.cpu_count() or 1)
-    logger.info(f"Using up to {max_threads} threads for booking {len(config['classes'])} activities.")
+    # Determine the number of threads, where threads -1 defaults to all available cores
+    requested_bookings = len(config["classes"])
+    max_threads = get_n_threads(max_threads, requested_bookings)
 
     # Schedule bookings in parallel
     schedule_bookings(
