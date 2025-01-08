@@ -21,10 +21,6 @@ beautifulsoup4 = "^4.12.3"
 pandas = "^2.2.3"
 pytz = "^2024.2"
 
-# Optional dev dependencies
-[tool.poetry.group.dev]
-optional = true
-
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.4"
 pytest-cov = "^6.0.0"
@@ -35,10 +31,6 @@ tox = "^4.23.2"
 ipykernel = "^6.29.5"
 types-pytz = "^2024.2.0.20241221"
 types-requests = "^2.32.0.20241016"
-
-# Optional docs dependencies
-[tool.poetry.group.docs]
-optional = true
 
 [tool.poetry.group.docs.dependencies]
 mkdocs = "^1.6.1"
