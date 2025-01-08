@@ -11,10 +11,10 @@
 [![Documentation](https://img.shields.io/badge/api-docs-blue)](https://jbeirer.github.io/resasports-bot/)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](https://github.com/jbeirer/resasports-bot/blob/main/CODE_OF_CONDUCT.md)
 
-Welcome to pysportbot!
+PySportBot empowers you to programmatically book fitness classes at any sports center that uses the [Resasports](https://social.resasports.com/en/) booking management software.
 
-## Download pysportbot
-```python
+## Install
+```bash
 pip install pysportbot
 ```
 
@@ -50,7 +50,7 @@ python -m pysportbot.service --config config.json
 ```
 The service requires a `json` configuration file that specifies your user data and how you would like to book your classes. Currently, two types of configuration are supported:
 
-##### 1. Book an upcoming class now
+### 1. Book an upcoming class now
 
 Let's say you would like to book Yoga next Monday at 18:00:00, then your `config.json` would look like:
 
@@ -70,7 +70,7 @@ Let's say you would like to book Yoga next Monday at 18:00:00, then your `config
     ]
 }
 ```
-##### 2. Book an upcoming class on a specific day and time
+### 2. Book an upcoming class on a specific day and time
 
 Let's say you would like to book Yoga next Monday at 18:00:00, but the execution of the booking should only happen on Friday at 07:30:00 then your `config.json` would look like:
 
