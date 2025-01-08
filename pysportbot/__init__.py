@@ -18,7 +18,7 @@ class SportBot:
     """Unified interface for interacting with the booking system."""
 
     def __init__(self, log_level: str = "INFO", print_centres: bool = False, time_zone: str = "Europe/Madrid") -> None:
-        setup_logger(log_level)
+        setup_logger(log_level, timezone=time_zone)
         self._logger = logging.getLogger("SportBot")
         self._logger.info("Initializing SportBot...")
         self._logger.info(f"Log level: {log_level}")
