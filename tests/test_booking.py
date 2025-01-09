@@ -4,44 +4,42 @@ from pysportbot.utils.errors import ErrorMessages
 
 
 def test_book_and_cancel_activity(bot):
-    """Test booking and canceling the first available activity slot within the week, starting from the next day."""
+    """Test booking and canceling a Gimnasio session on the upcoming Friday."""
 
-    # Fetch activities
-    activities = bot.activities()
-    assert not activities.empty, "No activities available for booking."
+    # Determine the upcoming Friday from today
+    today = datetime.now()
+    # Calculate the days until next Friday (if today is Friday, book for next week)
+    days_until_friday = (4 - today.weekday()) % 7
+    # Ensure that if it's already Friday, we move to the next Friday (7 days later)
+    if days_until_friday == 0:
+        days_until_friday = 7
+    upcoming_friday = today + timedelta(days=days_until_friday)
+    friday_str = upcoming_friday.strftime("%Y-%m-%d")
 
-    # Define the search range (next day to one week later)
-    start_date = datetime.now() + timedelta(days=1)
-    end_date = start_date + timedelta(days=5)
+    # Fetch available slots for 'Gimnasio' on upcoming Friday
+    slots = bot.daily_slots("Gimnasio", friday_str)
+    assert not slots.empty, f"No Gimnasio slots available for {friday_str}"
 
-    # Helper function to find the first bookable slot
-    def find_bookable_slot():
-        for activity_name in activities["name_activity"]:
-            current_date = start_date
-            while current_date <= end_date:
-                slots = bot.daily_slots(activity_name, current_date.strftime("%Y-%m-%d"))
-                if not slots.empty:
-                    for _, slot in slots.iterrows():
-                        try:
-                            bot.book(activity_name, slot["start_timestamp"])
-                            return {"activity_name": activity_name, "start_time": slot["start_timestamp"]}
-                        except ValueError as e:
-                            if str(e) in [
-                                ErrorMessages.slot_already_booked(),
-                                ErrorMessages.slot_unavailable(),
-                                ErrorMessages.slot_not_bookable_yet(),
-                            ]:
-                                continue
-                            raise
-                current_date += timedelta(days=1)
-        return None
+    # Book the first available slot
+    booked_slot = None
+    for _, slot in slots.iterrows():
+        try:
+            bot.book("Gimnasio", slot["start_timestamp"])
+            booked_slot = slot["start_timestamp"]
+            break
+        except ValueError as e:
+            # If the slot is already booked, unavailable, or not yet open, move on
+            if str(e) in [
+                ErrorMessages.slot_already_booked(),
+                ErrorMessages.slot_unavailable(),
+                ErrorMessages.slot_not_bookable_yet(),
+            ]:
+                continue
+            raise
 
-    # Find and book the first available slot
-    bookable_slot = find_bookable_slot()
-    assert bookable_slot is not None, "No bookable slots found for any activity within the next week."
+    assert booked_slot is not None, f"No bookable Gimnasio slots found on {friday_str}"
 
     # Cancel the booking
-    bot.cancel(bookable_slot["activity_name"], bookable_slot["start_time"])
-    assert (
-        True
-    ), f"Failed to cancel activity slot for {bookable_slot['activity_name']} at {bookable_slot['start_time']}."
+    bot.cancel("Gimnasio", booked_slot)
+    # Simple success assertion—if cancel fails, an exception should be raised
+    assert True, f"Failed to cancel Gimnasio slot at {booked_slot}"
