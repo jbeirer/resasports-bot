@@ -1,7 +1,7 @@
 import json
-from typing import Any, Dict, cast
+from typing import Any, cast
 
 
-def load_config(config_path: str) -> Dict[str, Any]:
+def load_config(config_path: str) -> dict[str, Any]:
     with open(config_path) as f:
-        return cast(Dict[str, Any], json.load(f))
+        return cast(dict[str, Any], json.load(f))

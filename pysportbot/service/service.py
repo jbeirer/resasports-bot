@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any
 
 from pysportbot import SportBot
 from pysportbot.service.booking import schedule_bookings
@@ -8,7 +8,7 @@ from pysportbot.utils.logger import get_logger
 
 
 def run_service(
-    config: Dict[str, Any],
+    config: dict[str, Any],
     booking_delay: int,
     retry_attempts: int,
     retry_delay: int,

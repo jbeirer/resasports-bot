@@ -1,7 +1,7 @@
 import logging
 import threading
 from datetime import datetime
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 import pytz
 
@@ -52,7 +52,7 @@ class ColorFormatter(logging.Formatter):
         self.include_threads = include_threads
         self.thread_colors: dict[str, str] = {}  # Initialize empty dictionary
 
-    def formatTime(self, record: logging.LogRecord, datefmt: Optional[str] = None) -> str:
+    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
         """
         Override to format the time in the desired timezone.
         """
