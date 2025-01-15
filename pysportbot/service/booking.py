@@ -1,7 +1,7 @@
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 import pytz
 
@@ -95,7 +95,7 @@ def attempt_booking(
 
 def schedule_bookings(
     bot: SportBot,
-    config: Dict[str, Any],
+    config: dict[str, Any],
     booking_delay: int,
     retry_attempts: int,
     retry_delay: int,

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
-from typing import Any, Dict
+from typing import Any
 
 from .config_loader import load_config
 from .service import run_service
@@ -23,7 +23,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    config: Dict[str, Any] = load_config(args.config)
+    config: dict[str, Any] = load_config(args.config)
     run_service(
         config,
         booking_delay=args.booking_delay,

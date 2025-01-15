@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 from pysportbot import SportBot
 from pysportbot.utils.errors import ErrorMessages
@@ -10,7 +10,7 @@ logger = get_logger(__name__)
 DAY_MAP = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
 
 
-def validate_config(config: Dict[str, Any]) -> None:
+def validate_config(config: dict[str, Any]) -> None:
     """
     Validate the overall configuration structure and values.
 
@@ -48,7 +48,7 @@ def validate_config(config: Dict[str, Any]) -> None:
             raise ValueError(ErrorMessages.invalid_class_definition())
 
 
-def validate_activities(bot: SportBot, config: Dict[str, Any]) -> None:
+def validate_activities(bot: SportBot, config: dict[str, Any]) -> None:
     """
     Validate that all activities specified in the configuration exist.
 

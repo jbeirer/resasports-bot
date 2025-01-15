@@ -1,7 +1,6 @@
 # pysportbot/sportbot.py
 
 import logging
-from typing import Optional
 
 from pandas import DataFrame
 
@@ -25,7 +24,7 @@ class SportBot:
         self._logger.info(f"Time zone: {time_zone}")
         self._centres = Centres(print_centres)
         self._session: Session = Session()
-        self._auth: Optional[Authenticator] = None
+        self._auth: Authenticator | None = None
         self._activities: Activities = Activities(self._session)
         self._bookings: Bookings = Bookings(self._session)
         self._df_activities: DataFrame | None = None
