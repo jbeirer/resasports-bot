@@ -118,8 +118,12 @@ def schedule_bookings(
         )
         # Re-authenticate 60 seconds before booking execution
         reauth_time = time_until_execution - 60
-        # Wait for re-authentication
-        time.sleep(reauth_time)
+
+        if reauth_time <= 0:
+            logger.debug("Less than 60 seconds remain until execution; re-authenticating now.")
+        else:
+            logger.debug(f"Re-authenticating in {reauth_time:.2f} seconds.")
+            time.sleep(reauth_time)
 
         # Re-authenticate before booking
         logger.info("Re-authenticating before booking.")

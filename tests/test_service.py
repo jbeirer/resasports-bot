@@ -1,7 +1,7 @@
 import json
 import unittest
 from datetime import datetime
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, call, mock_open, patch
 
 import pandas as pd
 import pytz
@@ -257,6 +257,65 @@ class TestBooking(unittest.TestCase):
     """
     Tests for booking.py module.
     """
+
+    @patch("pysportbot.service.booking.datetime", wraps=datetime)
+    @patch("pysportbot.service.booking.time")
+    @patch("pysportbot.service.booking.logger")
+    def test_schedule_bookings_future_execution(self, mock_logger, mock_time, mock_datetime):
+        """
+        Test schedule_bookings when execution is scheduled for a future time.
+        """
+        # Mock current time to simulate a future execution
+        tz = pytz.timezone("Europe/Madrid")
+        mock_now = tz.localize(datetime(2024, 1, 8, 9, 0, 0))  # Current time
+        mock_execution_time = tz.localize(datetime(2024, 1, 8, 10, 0, 0))  # 1 hour later
+        mock_datetime.now.return_value = mock_now
+
+        # Mock the calculate_next_execution function to return the future execution time
+        with patch("pysportbot.service.booking.calculate_next_execution", return_value=mock_execution_time):
+            mock_bot = MagicMock()
+            config = {
+                "email": "test@example.com",
+                "password": "pass",
+                "centre": "my-gim",
+                "booking_execution": "2024-01-08 10:00:00",
+                "classes": [{"activity": "Yoga", "class_day": "Monday", "class_time": "09:00:00"}],
+            }
+
+            # Run schedule_bookings
+            schedule_bookings(
+                bot=mock_bot,
+                config=config,
+                booking_delay=10,
+                retry_attempts=2,
+                retry_delay=1,
+                time_zone="Europe/Madrid",
+                max_threads=1,
+            )
+
+        # Assert the correct sleep calls
+        time_until_execution = (mock_execution_time - mock_now).total_seconds()
+        reauth_sleep = time_until_execution - 60  # Time until reauthentication
+        total_remaining_time = time_until_execution  # Full time until execution
+
+        # Expected sleep calls in the correct order
+        expected_sleep_calls = [
+            call(reauth_sleep),  # Time until reauthentication
+            call(total_remaining_time),  # Full remaining time
+            call(10),  # Booking delay
+        ]
+        mock_time.sleep.assert_has_calls(expected_sleep_calls, any_order=False)
+
+        # Assert the bot.login is called
+        mock_bot.login.assert_called_once_with("test@example.com", "pass", "my-gim")
+
+        # Verify logging calls
+        mock_logger.info.assert_any_call(
+            f"Waiting {time_until_execution:.2f} seconds until global execution time: "
+            f"{mock_execution_time.strftime('%Y-%m-%d %H:%M:%S %z')}."
+        )
+        mock_logger.info.assert_any_call("Re-authenticating before booking.")
+        mock_logger.info.assert_any_call("Waiting 10 seconds before attempting booking.")
 
     @patch("pysportbot.service.booking.logger")
     @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
