@@ -262,7 +262,21 @@ class TestBooking(unittest.TestCase):
     @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
     def test_attempt_booking_success(self, mock_datetime_sched, mock_logger):
         """
-        If matching_slots is found, attempt_booking should succeed on the first try.
+        Test the successful booking attempt when a matching slot is available.
+        
+        This test verifies that the `attempt_booking` function successfully books a class when:
+        - A matching slot exists for the specified day and time
+        - The bot can book the slot on the first attempt
+        
+        Args:
+            mock_datetime_sched (MagicMock): Mock for datetime scheduling
+            mock_logger (MagicMock): Mock for logging functionality
+        
+        Behavior:
+            - Sets a specific datetime (2024-01-10 Wednesday at 9:00 AM)
+            - Configures a mock bot with a matching daily slot
+            - Attempts to book a Yoga class on Wednesday at 6:00 PM
+            - Asserts that the bot's book method is called exactly once
         """
         # Force the current date to 2024-01-10 (which is a Wednesday)
         tz = pytz.timezone("Europe/Madrid")
@@ -352,7 +366,25 @@ class TestBooking(unittest.TestCase):
     @patch("pysportbot.service.booking.time")
     def test_schedule_bookings(self, mock_time, mock_executor, mock_as_completed):
         """
-        Ensures parallel bookings are submitted with ThreadPoolExecutor without getting stuck.
+        Test the parallel scheduling of bookings using ThreadPoolExecutor.
+        
+        This test method verifies that bookings are correctly submitted in parallel for multiple classes
+        with the specified configuration. It ensures that:
+        - The correct number of booking attempts are made based on configured classes
+        - ThreadPoolExecutor is initialized with the correct number of workers
+        - A delay is applied before scheduling bookings
+        - Futures are processed using concurrent.futures.as_completed()
+        
+        Args:
+            mock_time (MagicMock): Mock for time module to control sleep behavior
+            mock_executor (MagicMock): Mock for ThreadPoolExecutor to track executor creation
+            mock_as_completed (MagicMock): Mock for as_completed to verify concurrent processing
+        
+        Verifies:
+            - Booking delay is applied before scheduling
+            - Executor is created with specified max threads
+            - Booking submit is called for each configured class
+            - Futures are processed concurrently
         """
         # 1. Mock the as_completed() to return an empty or a list of mock futures
         mock_future = MagicMock()

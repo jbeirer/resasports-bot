@@ -28,16 +28,30 @@ def attempt_booking(
     time_zone: str = "Europe/Madrid",
 ) -> None:
     """
-    Attempt to book a slot for the given class.
-
-    Args:
-        bot (SportBot): The SportBot instance.
-        activity (str): Activity name.
-        class_day (str): Day of the class.
-        class_time (str): Time of the class.
-        retry_attempts (int): Number of retry attempts.
-        retry_delay (int): Delay between retries.
-        time_zone (str): Time zone for execution.
+    Attempt to book a slot for a specific sports class with configurable retry mechanism.
+    
+    Parameters:
+        bot (SportBot): The SportBot instance used for booking classes.
+        activity (str): Name of the sports activity to book.
+        class_day (str): Day of the week for the desired class.
+        class_time (str): Specific time of the class to book.
+        retry_attempts (int, optional): Maximum number of booking attempts. Defaults to 1.
+        retry_delay (int, optional): Delay in seconds between retry attempts. Defaults to 0.
+        time_zone (str, optional): Time zone for calculating the booking date. Defaults to "Europe/Madrid".
+    
+    Behavior:
+        - Calculates the exact booking date based on the class day and time zone
+        - Retrieves available slots for the specified activity
+        - Attempts to book a matching slot with configurable retry logic
+        - Stops retrying if the slot is already booked
+        - Logs detailed information about booking attempts and failures
+    
+    Raises:
+        ValueError: If no matching slots are found for the specified activity and time
+    
+    Notes:
+        - Does not raise an exception if all booking attempts fail
+        - Allows other bookings to proceed even if this specific booking fails
     """
     for attempt_num in range(1, retry_attempts + 1):
         booking_date = calculate_class_day(class_day, time_zone).strftime("%Y-%m-%d")
@@ -82,17 +96,35 @@ def schedule_bookings(
     max_threads: int,
 ) -> None:
     """
-    Execute bookings in parallel with a limit on the number of threads.
-
-    Args:
-        bot (SportBot): The SportBot instance.
-        classes (list): List of class configurations.
-        booking_execution (str): Global execution time for all bookings.
-        booking_delay (int): Delay before each booking attempt.
-        retry_attempts (int): Number of retry attempts.
-        retry_delay (int): Delay between retries.
-        time_zone (str): Timezone for booking.
-        max_threads (int): Maximum number of threads to use.
+    Schedule and execute sports class bookings in parallel with precise timing and re-authentication.
+    
+    Coordinates booking attempts for multiple sports classes using a thread pool, with configurable retry mechanisms and global execution timing. Handles re-authentication before booking and manages parallel execution of booking attempts.
+    
+    Parameters:
+        bot (SportBot): Authenticated SportBot instance for making class bookings.
+        config (dict): Configuration dictionary containing booking details.
+            - "classes" (list): List of class configurations to book
+            - "booking_execution" (str): Global execution time for bookings
+            - "email" (str): User's login email
+            - "password" (str): User's login password
+            - "centre" (str): Sports center identifier
+        booking_delay (int): Global delay in seconds before initiating bookings
+        retry_attempts (int): Number of retry attempts for each booking
+        retry_delay (int): Delay between booking retry attempts in seconds
+        time_zone (str): Timezone for booking calculations (e.g., "Europe/Madrid")
+        max_threads (int): Maximum number of concurrent booking threads
+    
+    Behavior:
+        - Logs planned bookings for each class
+        - Calculates precise global execution time
+        - Re-authenticates 60 seconds before booking execution
+        - Waits for the exact booking time
+        - Applies a global booking delay
+        - Submits booking attempts in parallel
+        - Logs individual booking attempt results
+    
+    Raises:
+        Exception: If re-authentication fails or any booking attempt encounters a critical error
     """
     # Log planned bookings
     for cls in config["classes"]:
