@@ -83,7 +83,6 @@ class SportBot:
 
     def book(self, activity: str, start_time: str) -> None:
 
-        self._logger.debug(f"Attempting to book class '{activity}' on {start_time}")
         if not self._is_logged_in:
             self._logger.error(ErrorMessages.not_logged_in())
             raise PermissionError(ErrorMessages.not_logged_in())
@@ -92,15 +91,37 @@ class SportBot:
             self._logger.error(ErrorMessages.no_activities_loaded())
             raise ValueError(ErrorMessages.no_activities_loaded())
 
+        # Fetch the daily slots for the activity
         slots = self.daily_slots(activity, start_time.split(" ")[0])
+
+        # Find the slot that matches the start time
         matching_slot = slots[slots["start_timestamp"] == start_time]
+
+        # If no matching slot is found, raise an error
         if matching_slot.empty:
             error_msg = ErrorMessages.slot_not_found(activity, start_time)
             self._logger.error(error_msg)
             raise IndexError(error_msg)
 
-        slot_id = matching_slot.iloc[0]["id_activity_calendar"]
+        # The targeted slot
+        target_slot = matching_slot.iloc[0]
+        # The unique slot ID
+        slot_id = target_slot["id_activity_calendar"]
+        # The total member capacity of the slot
+        slot_capacity = target_slot["capacity"]
+        # The number of members already inscribed in the slot
+        slot_n_inscribed = target_slot["n_inscribed"]
+        # Log slot capacity
+        self._logger.info(
+            f"Attempting to book class '{activity}' on {start_time} with ID {slot_id} (Slot capacity: {slot_n_inscribed}/{slot_capacity})"
+        )
 
+        # Check if the slot is already booked out
+        if slot_n_inscribed >= slot_capacity:
+            self._logger.error(f"Activity '{activity}' on {start_time} with ID {slot_id} is booked out...")
+            raise ValueError(ErrorMessages.slot_capacity_full())
+
+        # Attempt to book the slot
         try:
             self._bookings.book(slot_id)
             self._logger.info(f"Successfully booked class '{activity}' on {start_time}")
