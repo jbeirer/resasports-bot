@@ -14,10 +14,6 @@ from .scheduling import calculate_class_day, calculate_next_execution
 logger = get_logger(__name__)
 
 
-def _raise_no_matching_slots_error(activity: str, class_time: str, booking_date: str) -> None:
-    raise ValueError(ErrorMessages.no_matching_slots_for_time(activity, class_time, booking_date))
-
-
 def attempt_booking(
     bot: SportBot,
     activity: str,
@@ -43,22 +39,18 @@ def attempt_booking(
         booking_date = calculate_class_day(class_day, time_zone).strftime("%Y-%m-%d")
 
         try:
-            available_slots = bot.daily_slots(activity=activity, day=booking_date)
-
-            matching_slots = available_slots[available_slots["start_timestamp"] == f"{booking_date} {class_time}"]
-            if matching_slots.empty:
-                _raise_no_matching_slots_error(activity, class_time, booking_date)
-
-            slot_id = matching_slots.iloc[0]["start_timestamp"]
-            logger.info(f"Attempting to book '{activity}' at {slot_id} (Attempt {attempt_num}/{retry_attempts}).")
-            bot.book(activity=activity, start_time=slot_id)
+            bot.book(activity=activity, start_time=f"{booking_date} {class_time}")
 
         except Exception as e:
             error_str = str(e)
             logger.warning(f"Attempt {attempt_num} failed: {error_str}")
 
+            # Decide whether to retry based on the error message
             if ErrorMessages.slot_already_booked() in error_str:
                 logger.warning("Slot already booked; skipping further retries.")
+                return
+            if ErrorMessages.slot_capacity_full() in error_str:
+                logger.warning("Slot capacity full; skipping further retries.")
                 return
 
             if attempt_num < retry_attempts:
@@ -130,8 +122,7 @@ def schedule_bookings(
         try:
             bot.login(config["email"], config["password"], config["centre"])
         except Exception:
-            logger.exception("Re-authentication failed before booking execution.")
-            raise
+            logger.warning("Re-authentication failed before booking execution.")
 
         # Wait the remaining time until execution
         now = datetime.now(pytz.timezone(time_zone))
@@ -166,4 +157,4 @@ def schedule_bookings(
             try:
                 future.result()
             except Exception:
-                logger.exception(f"Booking for '{activity}' at {class_time} failed.")
+                logger.error(f"Booking for '{activity}' at {class_time} failed.")

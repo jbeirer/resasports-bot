@@ -116,6 +116,11 @@ class ErrorMessages:
         return "The slot is not available."
 
     @staticmethod
+    def slot_capacity_full() -> str:
+        """Return an error message for a slot that is full."""
+        return "The slot is full. Cannot book."
+
+    @staticmethod
     def cancellation_failed() -> str:
         """Return an error message for a failed cancellation."""
         return "Cancellation failed. The slot may not have been booked."

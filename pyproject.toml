@@ -110,7 +110,9 @@ lint.ignore = [
     # Long exception message
     "TRY003",
     # Module shadows a Python standard-library module
-    "A005"
+    "A005",
+    # Use `logging.exception` instead of `logging.error`
+    "TRY400"
 ]
 
 [tool.coverage.report]

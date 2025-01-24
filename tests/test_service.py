@@ -348,8 +348,8 @@ class TestBooking(unittest.TestCase):
     @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
     def test_attempt_booking_no_matching_slots(self, mock_datetime_sched, mock_logger):
         """
-        If no matching slot is found, we retry until attempts are exhausted
-        and never call book().
+        If no matching slot is found, attempt_booking should call the bot.book()
+        method, which will raise an exception internally, and log warnings on each attempt.
         """
         # Make the current date 2024-01-10 (Wednesday)
         tz = pytz.timezone("Europe/Madrid")
@@ -357,8 +357,10 @@ class TestBooking(unittest.TestCase):
         mock_datetime_sched.now.return_value = mock_now
 
         mock_bot = MagicMock()
-        # The slot is 17:59:59, so no exact match for 18:00:00
-        mock_bot.daily_slots.return_value = pd.DataFrame({"start_timestamp": ["2024-01-10 17:59:59"]})
+        # Mock the bot.book method to simulate a ValueError for no matching slots
+        mock_bot.book.side_effect = ValueError(
+            ErrorMessages.no_matching_slots_for_time("Yoga", "18:00:00", "2024-01-10")
+        )
 
         attempt_booking(
             bot=mock_bot,
@@ -369,10 +371,11 @@ class TestBooking(unittest.TestCase):
             retry_delay=0,
             time_zone="Europe/Madrid",
         )
-        # The code should never book
-        self.assertEqual(mock_bot.book.call_count, 0)
 
-        # On final attempt, we expect a log with 'No matching slots available for Yoga...'
+        # Check that book() was called twice (retry_attempts = 2)
+        self.assertEqual(mock_bot.book.call_count, 2)
+
+        # On the final attempt, ensure the correct error message was logged
         last_warning = mock_logger.warning.call_args_list[-1][0][0]
         self.assertIn(
             ErrorMessages.no_matching_slots_for_time("Yoga", "18:00:00", "2024-01-10"),

@@ -33,6 +33,7 @@ def test_book_and_cancel_activity(bot):
                 ErrorMessages.slot_already_booked(),
                 ErrorMessages.slot_unavailable(),
                 ErrorMessages.slot_not_bookable_yet(),
+                ErrorMessages.slot_capacity_full(),
             ]:
                 continue
             raise
