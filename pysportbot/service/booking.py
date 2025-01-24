@@ -101,7 +101,7 @@ def schedule_bookings(
     # Booking execution day and time
     booking_execution = config["booking_execution"]
 
-    # Exact time when booking will be executed (modulo global boooking delay)
+    # Exact time when booking will be executed (modulo global booking delay)
     execution_time = calculate_next_execution(booking_execution, time_zone)
 
     # Get the time now
