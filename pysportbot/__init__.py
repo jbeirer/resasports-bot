@@ -49,7 +49,7 @@ class SportBot:
             self._is_logged_in = True
             self._logger.info("Login successful!")
         except Exception:
-            self._is_logged_in = False  # Ensure state is False on failure
+            self._is_logged_in = False
             self._logger.exception(ErrorMessages.login_failed())
             raise
 
@@ -126,8 +126,7 @@ class SportBot:
             self._bookings.book(slot_id)
             self._logger.info(f"Successfully booked class '{activity}' on {start_time}")
         except ValueError:
-            self._logger.exception(f"Failed to book class '{activity}' on {start_time}")
-            raise
+            self._logger.error(f"Failed to book class '{activity}' on {start_time}")
 
     def cancel(self, activity: str, start_time: str) -> None:
 
@@ -152,5 +151,4 @@ class SportBot:
             self._bookings.cancel(slot_id)
             self._logger.info(f"Successfully cancelled class '{activity}' on {start_time}")
         except ValueError:
-            self._logger.exception(f"Failed to cancel class '{activity}' on {start_time}")
-            raise
+            self._logger.error(f"Failed to cancel class '{activity}' on {start_time}")

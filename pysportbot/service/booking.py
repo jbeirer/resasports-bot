@@ -49,6 +49,7 @@ def attempt_booking(
             error_str = str(e)
             logger.warning(f"Attempt {attempt_num} failed: {error_str}")
 
+            # Decide whether to retry based on the error message
             if ErrorMessages.slot_already_booked() in error_str:
                 logger.warning("Slot already booked; skipping further retries.")
                 return
@@ -125,7 +126,7 @@ def schedule_bookings(
         try:
             bot.login(config["email"], config["password"], config["centre"])
         except Exception:
-            logger.exception("Re-authentication failed before booking execution.")
+            logger.error("Re-authentication failed before booking execution.")
             raise
 
         # Wait the remaining time until execution
@@ -161,4 +162,4 @@ def schedule_bookings(
             try:
                 future.result()
             except Exception:
-                logger.exception(f"Booking for '{activity}' at {class_time} failed.")
+                logger.error(f"Booking for '{activity}' at {class_time} failed.")
