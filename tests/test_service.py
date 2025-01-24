@@ -1,12 +1,12 @@
 import json
 import unittest
 from datetime import datetime
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, call, mock_open, patch
 
 import pandas as pd
 import pytz
 
-from pysportbot.service.booking import attempt_booking, schedule_bookings, wait_for_execution
+from pysportbot.service.booking import attempt_booking, schedule_bookings
 
 # Adjust these imports to match your actual project structure:
 from pysportbot.service.config_loader import load_config
@@ -258,40 +258,64 @@ class TestBooking(unittest.TestCase):
     Tests for booking.py module.
     """
 
+    @patch("pysportbot.service.booking.datetime", wraps=datetime)
+    @patch("pysportbot.service.booking.time")
     @patch("pysportbot.service.booking.logger")
-    @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
-    @patch("pysportbot.service.booking.calculate_next_execution")
-    @patch("pysportbot.service.booking.time")
-    def test_wait_for_execution_in_future(self, mock_time, mock_calc_exec, mock_datetime_sched, mock_logger):
+    def test_schedule_bookings_future_execution(self, mock_logger, mock_time, mock_datetime):
         """
-        If the execution time is in the future, we expect time.sleep to be called.
+        Test schedule_bookings when execution is scheduled for a future time.
         """
-        # Suppose calculate_next_execution returns a time 60s ahead of now
-        mock_calc_exec.return_value = datetime(2024, 1, 10, 12, 1, 0, tzinfo=pytz.utc)
+        # Mock current time to simulate a future execution
+        tz = pytz.timezone("Europe/Madrid")
+        mock_now = tz.localize(datetime(2024, 1, 8, 9, 0, 0))  # Current time
+        mock_execution_time = tz.localize(datetime(2024, 1, 8, 10, 0, 0))  # 1 hour later
+        mock_datetime.now.return_value = mock_now
 
-        with patch("pysportbot.service.booking.datetime") as mock_datetime_booking:
-            # 'now' is 12:00:00
-            mock_now = datetime(2024, 1, 10, 12, 0, 0, tzinfo=pytz.utc)
-            mock_datetime_booking.now.return_value = mock_now
+        # Mock the calculate_next_execution function to return the future execution time
+        with patch("pysportbot.service.booking.calculate_next_execution", return_value=mock_execution_time):
+            mock_bot = MagicMock()
+            config = {
+                "email": "test@example.com",
+                "password": "pass",
+                "centre": "my-gim",
+                "booking_execution": "2024-01-08 10:00:00",
+                "classes": [{"activity": "Yoga", "class_day": "Monday", "class_time": "09:00:00"}],
+            }
 
-            wait_for_execution("Wednesday 12:01:00", "UTC")
-            mock_time.sleep.assert_called_once()
-            self.assertAlmostEqual(mock_time.sleep.call_args[0][0], 60, delta=0.5)
+            # Run schedule_bookings
+            schedule_bookings(
+                bot=mock_bot,
+                config=config,
+                booking_delay=10,
+                retry_attempts=2,
+                retry_delay=1,
+                time_zone="Europe/Madrid",
+                max_threads=1,
+            )
 
-    @patch("pysportbot.service.booking.time")
-    @patch("pysportbot.service.booking.calculate_next_execution")
-    @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
-    def test_wait_for_execution_in_the_past(self, mock_datetime_sched, mock_calc_exec, mock_time):
-        """
-        If the execution time is in the past, no sleep should occur.
-        """
-        mock_calc_exec.return_value = datetime(2024, 1, 10, 11, 59, 0, tzinfo=pytz.utc)
-        with patch("pysportbot.service.booking.datetime") as mock_datetime_booking:
-            mock_now = datetime(2024, 1, 10, 12, 0, 0, tzinfo=pytz.utc)
-            mock_datetime_booking.now.return_value = mock_now
+        # Assert the correct sleep calls
+        time_until_execution = (mock_execution_time - mock_now).total_seconds()
+        reauth_sleep = time_until_execution - 60  # Time until reauthentication
+        total_remaining_time = time_until_execution  # Full time until execution
 
-            wait_for_execution("Wednesday 11:59:00", "UTC")
-            mock_time.sleep.assert_not_called()
+        # Expected sleep calls in the correct order
+        expected_sleep_calls = [
+            call(reauth_sleep),  # Time until reauthentication
+            call(total_remaining_time),  # Full remaining time
+            call(10),  # Booking delay
+        ]
+        mock_time.sleep.assert_has_calls(expected_sleep_calls, any_order=False)
+
+        # Assert the bot.login is called
+        mock_bot.login.assert_called_once_with("test@example.com", "pass", "my-gim")
+
+        # Verify logging calls
+        mock_logger.info.assert_any_call(
+            f"Waiting {time_until_execution:.2f} seconds until global execution time: "
+            f"{mock_execution_time.strftime('%Y-%m-%d %H:%M:%S %z')}."
+        )
+        mock_logger.info.assert_any_call("Re-authenticating before booking.")
+        mock_logger.info.assert_any_call("Waiting 10 seconds before attempting booking.")
 
     @patch("pysportbot.service.booking.logger")
     @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
@@ -385,8 +409,7 @@ class TestBooking(unittest.TestCase):
     @patch("pysportbot.service.booking.as_completed")
     @patch("pysportbot.service.booking.ThreadPoolExecutor")
     @patch("pysportbot.service.booking.time")
-    @patch("pysportbot.service.booking.wait_for_execution")
-    def test_schedule_bookings(self, mock_wait, mock_time, mock_executor, mock_as_completed):
+    def test_schedule_bookings(self, mock_time, mock_executor, mock_as_completed):
         """
         Ensures parallel bookings are submitted with ThreadPoolExecutor without getting stuck.
         """
@@ -426,7 +449,6 @@ class TestBooking(unittest.TestCase):
         )
 
         # Assertions
-        mock_wait.assert_called_once_with("now", "Europe/Madrid")
         mock_time.sleep.assert_called_once_with(2)
         mock_executor.assert_called_once_with(max_workers=2)
 
