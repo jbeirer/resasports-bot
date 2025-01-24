@@ -14,10 +14,6 @@ from .scheduling import calculate_class_day, calculate_next_execution
 logger = get_logger(__name__)
 
 
-def _raise_no_matching_slots_error(activity: str, class_time: str, booking_date: str) -> None:
-    raise ValueError(ErrorMessages.no_matching_slots_for_time(activity, class_time, booking_date))
-
-
 def attempt_booking(
     bot: SportBot,
     activity: str,
@@ -126,8 +122,7 @@ def schedule_bookings(
         try:
             bot.login(config["email"], config["password"], config["centre"])
         except Exception:
-            logger.error("Re-authentication failed before booking execution.")
-            raise
+            logger.warning("Re-authentication failed before booking execution.")
 
         # Wait the remaining time until execution
         now = datetime.now(pytz.timezone(time_zone))
