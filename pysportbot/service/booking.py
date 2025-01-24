@@ -18,27 +18,6 @@ def _raise_no_matching_slots_error(activity: str, class_time: str, booking_date:
     raise ValueError(ErrorMessages.no_matching_slots_for_time(activity, class_time, booking_date))
 
 
-def wait_for_execution(booking_execution: str, time_zone: str) -> None:
-    """
-    Wait until the specified global execution time.
-
-    Args:
-        booking_execution (str): Global execution time in "Day HH:MM:SS" format.
-        time_zone (str): Timezone for calculation.
-    """
-    tz = pytz.timezone(time_zone)
-    execution_time = calculate_next_execution(booking_execution, time_zone)
-    now = datetime.now(tz)
-    time_until_execution = (execution_time - now).total_seconds()
-
-    if time_until_execution > 0:
-        logger.info(
-            f"Waiting {time_until_execution:.2f} seconds until global execution time: "
-            f"{execution_time.strftime('%Y-%m-%d %H:%M:%S %z')}."
-        )
-        time.sleep(time_until_execution)
-
-
 def attempt_booking(
     bot: SportBot,
     activity: str,
@@ -119,20 +98,47 @@ def schedule_bookings(
     for cls in config["classes"]:
         logger.info(f"Scheduled to book '{cls['activity']}' next {cls['class_day']} at {cls['class_time']}.")
 
-    # Wait globally before starting bookings
-    wait_for_execution(config["booking_execution"], time_zone)
+    # Booking execution day and time
+    booking_execution = config["booking_execution"]
+
+    # Exact time when booking will be executed (modulo global boooking delay)
+    execution_time = calculate_next_execution(booking_execution, time_zone)
+
+    # Get the time now
+    now = datetime.now(pytz.timezone(time_zone))
+
+    # Calculate the seconds until execution
+    time_until_execution = (execution_time - now).total_seconds()
+
+    if time_until_execution > 0:
+
+        logger.info(
+            f"Waiting {time_until_execution:.2f} seconds until global execution time: "
+            f"{execution_time.strftime('%Y-%m-%d %H:%M:%S %z')}."
+        )
+        # Re-authenticate 60 seconds before booking execution
+        reauth_time = time_until_execution - 60
+        # Wait for re-authentication
+        time.sleep(reauth_time)
+
+        # Re-authenticate before booking
+        logger.info("Re-authenticating before booking.")
+        try:
+            bot.login(config["email"], config["password"], config["centre"])
+        except Exception:
+            logger.exception("Re-authentication failed before booking execution.")
+            raise
+
+        # Wait the remaining time until execution
+        now = datetime.now(pytz.timezone(time_zone))
+        remaining_time = (execution_time - now).total_seconds()
+        if remaining_time > 0:
+            logger.info(f"Waiting {remaining_time:.2f} seconds until booking execution.")
+            time.sleep(remaining_time)
 
     # Global booking delay
     logger.info(f"Waiting {booking_delay} seconds before attempting booking.")
     time.sleep(booking_delay)
-
-    # Re-authenticate before booking
-    logger.debug("Re-authenticating before booking.")
-    try:
-        bot.login(config["email"], config["password"], config["centre"])
-    except Exception:
-        logger.exception("Re-authentication failed before booking execution.")
-        raise
 
     # Submit bookings in parallel
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
