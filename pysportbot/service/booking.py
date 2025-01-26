@@ -132,8 +132,9 @@ def schedule_bookings(
             time.sleep(remaining_time)
 
     # Global booking delay
-    logger.info(f"Waiting {booking_delay} seconds before attempting booking.")
-    time.sleep(booking_delay)
+    if booking_delay > 0:
+        logger.info(f"Waiting {booking_delay} seconds before attempting booking.")
+        time.sleep(booking_delay)
 
     # Submit bookings in parallel
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
