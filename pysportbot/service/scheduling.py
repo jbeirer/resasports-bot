@@ -56,6 +56,7 @@ def calculate_class_day(class_day: str, time_zone: str = "Europe/Madrid") -> dat
     now = datetime.now(tz)
     target_weekday = DAY_MAP[class_day.lower().strip()]
     days_ahead = target_weekday - now.weekday()
-    if days_ahead < 0:
+    # Ensure we always book for the upcoming week
+    if days_ahead <= 0:
         days_ahead += 7
     return now + timedelta(days=days_ahead)

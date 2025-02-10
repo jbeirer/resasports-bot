@@ -237,6 +237,38 @@ class TestScheduling(unittest.TestCase):
         expected = tz.localize(datetime(2024, 1, 15, 12, 0, 0))
         self.assertEqual(result.date(), expected.date())
 
+    @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
+    def test_calculate_class_day_always_next_week(self, mock_datetime):
+        """
+        If today is Friday at 07:30 and class_day is Friday at 18:00,
+        ensure the booking is for NEXT Friday, not today.
+        """
+        tz = pytz.timezone("Europe/Madrid")
+        mock_now = tz.localize(datetime(2024, 1, 5, 7, 30, 0))  # Simulated Friday, Jan 5, 2024, 07:30
+        mock_datetime.now.return_value = mock_now
+
+        result = calculate_class_day("Friday", "Europe/Madrid")
+
+        # Expected: The NEXT Friday (2024-01-12), NOT today (2024-01-05)
+        expected = tz.localize(datetime(2024, 1, 12, 7, 30, 0))  # Next Friday
+
+        self.assertEqual(result.date(), expected.date())
+
+    @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
+    def test_calculate_class_day_midweek_execution(self, mock_datetime):
+        """
+        If today is Wednesday and class_day is next Tuesday, ensure it selects the next week's Tuesday.
+        """
+        tz = pytz.timezone("Europe/Madrid")
+        mock_now = tz.localize(datetime(2024, 1, 10, 12, 0, 0))  # Wednesday
+        mock_datetime.now.return_value = mock_now
+
+        result = calculate_class_day("Tuesday", "Europe/Madrid")
+
+        # Expected: Next week's Tuesday (2024-01-16)
+        expected = tz.localize(datetime(2024, 1, 16, 12, 0, 0))
+        self.assertEqual(result.date(), expected.date())
+
     def test_day_map_contains_all_days(self):
         """
         Test that DAY_MAP includes all 7 days with correct indexes.
