@@ -16,25 +16,25 @@ dynamic = ["requires-python", "dependencies"]
 [tool.poetry.dependencies]
 python = ">=3.10,<3.14"
 requests = "^2.32.3"
-beautifulsoup4 = "^4.12.3"
+beautifulsoup4 = "^4.13.3"
 pandas = "^2.2.3"
-pytz = "^2024.2"
+pytz = "^2025.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.4"
 pytest-cov = "^6.0.0"
-deptry = "^0.22.0"
-mypy = "^1.14.1"
-pre-commit = "^4.0.1"
-tox = "^4.23.2"
+deptry = "^0.23.0"
+mypy = "^1.15.0"
+pre-commit = "^4.1.0"
+tox = "^4.24.1"
 ipykernel = "^6.29.5"
-types-pytz = "^2024.2.0.20241221"
+types-pytz = "^2025.1.0.20250204"
 types-requests = "^2.32.0.20241016"
 
 [tool.poetry.group.docs.dependencies]
 mkdocs = "^1.6.1"
-mkdocs-material = "^9.5.49"
-mkdocstrings = {extras = ["python"], version = "^0.27.0"}
+mkdocs-material = "^9.6.3"
+mkdocstrings = {extras = ["python"], version = "^0.28.0"}
 
 [build-system]
 requires = ["poetry-core>=2.0.1"]
