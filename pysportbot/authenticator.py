@@ -51,7 +51,11 @@ class Authenticator:
             logger.error(f"Failed to fetch login popup: {response.status_code}")
             raise RuntimeError(ErrorMessages.failed_fetch("login popup"))
         logger.debug("Login popup fetched successfully.")
-        csrf_token = BeautifulSoup(response.text, "html.parser").find("input", {"name": "_csrf_token"})["value"]
+        soup = BeautifulSoup(response.text, "html.parser")
+        csrf_tag = soup.find("input", {"name": "_csrf_token"})
+        if csrf_tag is None:
+            raise ValueError("CSRF token input not found on the page")
+        csrf_token = csrf_tag["value"]  # type: ignore[index]
 
         # Step 2: Perform login
         payload = {
