@@ -32,13 +32,27 @@ class Activities:
         """
         logger.info("Fetching activities...")
         response = self.session.post(Endpoints.ACTIVITIES, headers=self.headers)
+
         if response.status_code != 200:
             error_msg = ErrorMessages.failed_fetch("activities")
             logger.error(error_msg)
             raise RuntimeError(error_msg)
+
+        try:
+            activities = response.json().get("activities", {})
+        except json.JSONDecodeError as err:
+            error_msg = "Invalid JSON response while fetching activities."
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from err
+
+        if not activities:
+            logger.warning("No activities found in the response.")
+
+        df_activities = pd.DataFrame.from_dict(activities, orient="index")
+        df_activities.index = df_activities.index.astype(int)  # Ensure index is integer for consistency
+
         logger.info("Activities fetched successfully.")
-        activities = json.loads(response.content.decode("utf-8"))["activities"]
-        return pd.DataFrame.from_dict(activities, orient="index")
+        return df_activities
 
     def daily_slots(self, df_activities: DataFrame, activity_name: str, day: str) -> DataFrame:
         """
@@ -67,9 +81,10 @@ class Activities:
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-        # Extract activity ID
-        activity_id = str(activity_match.id_activity.iloc[0])
-        id_category_activity = df_activities.loc[activity_id].activityCategoryId
+        # Extract activity ID and category ID
+        # Ensures activity_id is an integer
+        activity_id = activity_match.index[0]
+        id_category_activity = activity_match.at[activity_id, "activityCategoryId"]
 
         # Get Unix timestamp bounds for the day
         unix_day_bounds = get_unix_day_bounds(day)
@@ -81,12 +96,19 @@ class Activities:
             "end": unix_day_bounds[1],
         }
         response = self.session.get(Endpoints.SLOTS, headers=self.headers, params=params)
+
         if response.status_code != 200:
             error_msg = ErrorMessages.failed_fetch("slots")
             logger.error(error_msg)
             raise RuntimeError(error_msg)
 
-        slots = json.loads(response.content.decode("utf-8"))
+        try:
+            slots = response.json()
+        except json.JSONDecodeError as err:
+            error_msg = "Invalid JSON response while fetching slots."
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from err
+
         if not slots:
             warning_msg = ErrorMessages.no_slots(activity_name, day)
             logger.warning(warning_msg)
@@ -110,10 +132,12 @@ class Activities:
             "trainer",
         ]
         df_slots = pd.DataFrame(slots)
-        df_slots = df_slots[df_slots.columns.intersection(columns)]  # Ensure no KeyError
+
+        # Ensure only desired columns are selected without KeyError
+        df_slots = df_slots.loc[:, df_slots.columns.intersection(columns)]
 
         # Only select rows of the specified activity
-        df_slots = df_slots[df_slots.id_activity == activity_id]
+        df_slots = df_slots[df_slots["id_activity"] == activity_id]
         if df_slots.empty:
             warning_msg = ErrorMessages.no_matching_slots(activity_name, day)
             logger.warning(warning_msg)
