@@ -123,10 +123,12 @@ For example, if you have a **Yoga** class on **Monday at 18:00:00**, and you wan
 name: Weekly Booking
 
 on:
-  # Runs at 06:00 UTC (07:00 CET) on Fridays
-  # Ensure enough time for the job to start well before 07:30 CET
+  # Runs at 05:00 UTC (07:00 Madrid time during daylight saving time) on Fridays
+  # Note: Update to '0 6 * * 5' for winter (standard) time when Madrid shifts to UTC+1
+  # GitHub Actions cron expressions are always in UTC and do not support time zones
+  # Reference: https://github.com/orgs/community/discussions/13454
   schedule:
-    - cron: '0 6 * * 5'
+    - cron: '0 5 * * 5'
 
 jobs:
   book:
