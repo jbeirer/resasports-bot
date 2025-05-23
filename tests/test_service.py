@@ -244,7 +244,8 @@ class TestScheduling(unittest.TestCase):
         ensure the booking is for NEXT Friday, not today.
         """
         tz = pytz.timezone("Europe/Madrid")
-        mock_now = tz.localize(datetime(2024, 1, 5, 7, 30, 0))  # Simulated Friday, Jan 5, 2024, 07:30
+        # Simulated Friday, Jan 5, 2024, 07:30
+        mock_now = tz.localize(datetime(2024, 1, 5, 7, 30, 0))
         mock_datetime.now.return_value = mock_now
 
         result = calculate_class_day("Friday", "Europe/Madrid")
@@ -293,9 +294,9 @@ class TestBooking(unittest.TestCase):
     @patch("pysportbot.service.booking.datetime", wraps=datetime)
     @patch("pysportbot.service.booking.time")
     @patch("pysportbot.service.booking.logger")
-    def test_schedule_bookings_future_execution(self, mock_logger, mock_time, mock_datetime):
+    def test_schedule_bookings_future_execution_invalid_session(self, mock_logger, mock_time, mock_datetime):
         """
-        Test schedule_bookings when execution is scheduled for a future time.
+        Test schedule_bookings when execution is scheduled for a future time and session is invalid.
         """
         # Mock current time to simulate a future execution
         tz = pytz.timezone("Europe/Madrid")
@@ -306,6 +307,10 @@ class TestBooking(unittest.TestCase):
         # Mock the calculate_next_execution function to return the future execution time
         with patch("pysportbot.service.booking.calculate_next_execution", return_value=mock_execution_time):
             mock_bot = MagicMock()
+
+            # Mock the session validation to return False (invalid session)
+            mock_bot._auth.is_session_valid.return_value = False
+
             config = {
                 "email": "test@example.com",
                 "password": "pass",
@@ -328,26 +333,140 @@ class TestBooking(unittest.TestCase):
         # Assert the correct sleep calls
         time_until_execution = (mock_execution_time - mock_now).total_seconds()
         reauth_sleep = time_until_execution - 60  # Time until reauthentication
-        total_remaining_time = time_until_execution  # Full time until execution
+        remaining_time = 0  # Should be 0 since datetime.now is mocked to not advance
 
         # Expected sleep calls in the correct order
         expected_sleep_calls = [
             call(reauth_sleep),  # Time until reauthentication
-            call(total_remaining_time),  # Full remaining time
+            call(remaining_time),  # Remaining time after re-auth
             call(10),  # Booking delay
         ]
         mock_time.sleep.assert_has_calls(expected_sleep_calls, any_order=False)
 
-        # Assert the bot.login is called
+        # Assert session validation was called
+        mock_bot._auth.is_session_valid.assert_called_once()
+
+        # Assert the bot.login is called (because session was invalid)
         mock_bot.login.assert_called_once_with("test@example.com", "pass", "my-gim")
 
-        # Verify logging calls
-        mock_logger.info.assert_any_call(
-            f"Waiting {time_until_execution:.2f} seconds until global execution time: "
-            f"{mock_execution_time.strftime('%Y-%m-%d %H:%M:%S %z')}."
-        )
-        mock_logger.info.assert_any_call("Re-authenticating before booking.")
-        mock_logger.info.assert_any_call("Waiting 10 seconds before attempting booking.")
+    @patch("pysportbot.service.booking.datetime", wraps=datetime)
+    @patch("pysportbot.service.booking.time")
+    @patch("pysportbot.service.booking.logger")
+    def test_schedule_bookings_future_execution_valid_session(self, mock_logger, mock_time, mock_datetime):
+        """
+        Test schedule_bookings when execution is scheduled for a future time and session is valid.
+        """
+        # Mock current time to simulate a future execution
+        tz = pytz.timezone("Europe/Madrid")
+        mock_now = tz.localize(datetime(2024, 1, 8, 9, 0, 0))  # Current time
+        mock_execution_time = tz.localize(datetime(2024, 1, 8, 10, 0, 0))  # 1 hour later
+        mock_datetime.now.return_value = mock_now
+
+        # Mock the calculate_next_execution function to return the future execution time
+        with patch("pysportbot.service.booking.calculate_next_execution", return_value=mock_execution_time):
+            mock_bot = MagicMock()
+
+            # Mock the session validation to return True (valid session)
+            mock_bot._auth.is_session_valid.return_value = True
+
+            config = {
+                "email": "test@example.com",
+                "password": "pass",
+                "centre": "my-gim",
+                "booking_execution": "2024-01-08 10:00:00",
+                "classes": [{"activity": "Yoga", "class_day": "Monday", "class_time": "09:00:00"}],
+            }
+
+            # Run schedule_bookings
+            schedule_bookings(
+                bot=mock_bot,
+                config=config,
+                booking_delay=10,
+                retry_attempts=2,
+                retry_delay=1,
+                time_zone="Europe/Madrid",
+                max_threads=1,
+            )
+
+        # Assert the correct sleep calls
+        time_until_execution = (mock_execution_time - mock_now).total_seconds()
+        reauth_sleep = time_until_execution - 60  # Time until session check
+        remaining_time = 0  # Should be 0 since datetime.now is mocked to not advance
+
+        # Expected sleep calls in the correct order
+        expected_sleep_calls = [
+            call(reauth_sleep),  # Time until session validation
+            call(remaining_time),  # Remaining time after session check
+            call(10),  # Booking delay
+        ]
+        mock_time.sleep.assert_has_calls(expected_sleep_calls, any_order=False)
+
+        # Assert session validation was called
+        mock_bot._auth.is_session_valid.assert_called_once()
+
+        # Assert the bot.login is NOT called (because session was valid)
+        mock_bot.login.assert_not_called()
+
+    @patch("pysportbot.service.booking.datetime", wraps=datetime)
+    @patch("pysportbot.service.booking.time")
+    @patch("pysportbot.service.booking.logger")
+    def test_schedule_bookings_session_validation_exception(self, mock_logger, mock_time, mock_datetime):
+        """
+        Test schedule_bookings when session validation throws an exception.
+        """
+        # Mock current time to simulate a future execution
+        tz = pytz.timezone("Europe/Madrid")
+        mock_now = tz.localize(datetime(2024, 1, 8, 9, 0, 0))  # Current time
+        mock_execution_time = tz.localize(datetime(2024, 1, 8, 10, 0, 0))  # 1 hour later
+        mock_datetime.now.return_value = mock_now
+
+        # Mock the calculate_next_execution function to return the future execution time
+        with patch("pysportbot.service.booking.calculate_next_execution", return_value=mock_execution_time):
+            mock_bot = MagicMock()
+
+            # Mock the session validation to raise an exception
+            mock_bot._auth.is_session_valid.side_effect = Exception("Network error")
+
+            config = {
+                "email": "test@example.com",
+                "password": "pass",
+                "centre": "my-gim",
+                "booking_execution": "2024-01-08 10:00:00",
+                "classes": [{"activity": "Yoga", "class_day": "Monday", "class_time": "09:00:00"}],
+            }
+
+            # Run schedule_bookings
+            schedule_bookings(
+                bot=mock_bot,
+                config=config,
+                booking_delay=10,
+                retry_attempts=2,
+                retry_delay=1,
+                time_zone="Europe/Madrid",
+                max_threads=1,
+            )
+
+        # Assert the correct sleep calls
+        time_until_execution = (mock_execution_time - mock_now).total_seconds()
+        reauth_sleep = time_until_execution - 60
+        remaining_time = 0
+
+        # Expected sleep calls in the correct order
+        expected_sleep_calls = [
+            call(reauth_sleep),
+            call(remaining_time),
+            call(10),
+        ]
+        mock_time.sleep.assert_has_calls(expected_sleep_calls, any_order=False)
+
+        # Assert session validation was attempted
+        mock_bot._auth.is_session_valid.assert_called_once()
+
+        # Assert the bot.login is NOT called (exception handling should prevent it)
+        mock_bot.login.assert_not_called()
+
+        # Assert warning was logged
+        mock_logger.warning.assert_called_with("Re-authentication failed before booking execution with Network error.")
 
     @patch("pysportbot.service.booking.logger")
     @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
@@ -577,7 +696,8 @@ class TestServiceRun(unittest.TestCase):
         bot_instance = mock_sportbot_class.return_value
         bot_instance.login.assert_called_once_with("test@example.com", "pass", "my-gim")
         mock_validate_activities.assert_called_once_with(bot_instance, mock_config)
-        mock_get_n_threads.assert_called_once_with(-1, 1)  # there's only 1 class
+        # there's only 1 class
+        mock_get_n_threads.assert_called_once_with(-1, 1)
         mock_schedule_bookings.assert_called_once()
 
     @patch("pysportbot.service.service.validate_config", side_effect=ValueError("Invalid config"))

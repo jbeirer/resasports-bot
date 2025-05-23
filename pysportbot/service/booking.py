@@ -119,8 +119,7 @@ def schedule_bookings(
 
         # Re-authenticate before booking if necessary
         try:
-            session_valid = bot._auth.is_session_valid()
-            if not session_valid:
+            if bot._auth and bot._auth.is_session_valid():
                 logger.info("Attempting re-authenticating before booking.")
                 bot.login(config["email"], config["password"], config["centre"])
             else:
