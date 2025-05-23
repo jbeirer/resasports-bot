@@ -117,12 +117,17 @@ def schedule_bookings(
             logger.debug(f"Re-authenticating in {reauth_time:.2f} seconds.")
             time.sleep(reauth_time)
 
-        # Re-authenticate before booking
-        logger.info("Re-authenticating before booking.")
+        # Re-authenticate before booking if necessary
         try:
-            bot.login(config["email"], config["password"], config["centre"])
-        except Exception:
-            logger.warning("Re-authentication failed before booking execution.")
+            session_valid = bot._auth.is_session_valid()
+            if not session_valid:
+                logger.info("Attempting re-authenticating before booking.")
+                bot.login(config["email"], config["password"], config["centre"])
+            else:
+                logger.info("Session still valid. Skipping re-authentification.")
+
+        except Exception as e:
+            logger.warning(f"Re-authentication failed before booking execution with {e}.")
 
         # Wait the remaining time until execution
         now = datetime.now(pytz.timezone(time_zone))
