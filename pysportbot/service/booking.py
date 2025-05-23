@@ -120,10 +120,10 @@ def schedule_bookings(
         # Re-authenticate before booking if necessary
         try:
             if bot._auth and bot._auth.is_session_valid():
+                logger.info("Session still valid. Skipping re-authentication.")
+            else:
                 logger.info("Attempting re-authenticating before booking.")
                 bot.login(config["email"], config["password"], config["centre"])
-            else:
-                logger.info("Session still valid. Skipping re-authentication.")
 
         except Exception as e:
             logger.warning(f"Re-authentication failed before booking execution with {e}.")
@@ -133,7 +133,7 @@ def schedule_bookings(
         remaining_time = (execution_time - now).total_seconds()
         if remaining_time > 0:
             logger.info(f"Waiting {remaining_time:.2f} seconds until booking execution.")
-            time.sleep(remaining_time)
+        time.sleep(max(0, remaining_time))
 
     # Global booking delay
     if booking_delay > 0:

@@ -302,7 +302,12 @@ class TestBooking(unittest.TestCase):
         tz = pytz.timezone("Europe/Madrid")
         mock_now = tz.localize(datetime(2024, 1, 8, 9, 0, 0))  # Current time
         mock_execution_time = tz.localize(datetime(2024, 1, 8, 10, 0, 0))  # 1 hour later
-        mock_datetime.now.return_value = mock_now
+
+        # Mock datetime.now() to return different values for each call
+        mock_datetime.now.side_effect = [
+            mock_now,  # First call - initial time check
+            mock_execution_time,  # Second call - after session validation, time has "advanced"
+        ]
 
         # Mock the calculate_next_execution function to return the future execution time
         with patch("pysportbot.service.booking.calculate_next_execution", return_value=mock_execution_time):
@@ -333,7 +338,7 @@ class TestBooking(unittest.TestCase):
         # Assert the correct sleep calls
         time_until_execution = (mock_execution_time - mock_now).total_seconds()
         reauth_sleep = time_until_execution - 60  # Time until reauthentication
-        remaining_time = 0  # Should be 0 since datetime.now is mocked to not advance
+        remaining_time = 0  # Should be 0 since second datetime.now returns execution_time
 
         # Expected sleep calls in the correct order
         expected_sleep_calls = [
@@ -360,7 +365,12 @@ class TestBooking(unittest.TestCase):
         tz = pytz.timezone("Europe/Madrid")
         mock_now = tz.localize(datetime(2024, 1, 8, 9, 0, 0))  # Current time
         mock_execution_time = tz.localize(datetime(2024, 1, 8, 10, 0, 0))  # 1 hour later
-        mock_datetime.now.return_value = mock_now
+
+        # Mock datetime.now() to return different values for each call
+        mock_datetime.now.side_effect = [
+            mock_now,  # First call - initial time check
+            mock_execution_time,  # Second call - after session validation, time has "advanced"
+        ]
 
         # Mock the calculate_next_execution function to return the future execution time
         with patch("pysportbot.service.booking.calculate_next_execution", return_value=mock_execution_time):
@@ -391,7 +401,7 @@ class TestBooking(unittest.TestCase):
         # Assert the correct sleep calls
         time_until_execution = (mock_execution_time - mock_now).total_seconds()
         reauth_sleep = time_until_execution - 60  # Time until session check
-        remaining_time = 0  # Should be 0 since datetime.now is mocked to not advance
+        remaining_time = 0  # Should be 0 since second datetime.now returns execution_time
 
         # Expected sleep calls in the correct order
         expected_sleep_calls = [
@@ -418,7 +428,12 @@ class TestBooking(unittest.TestCase):
         tz = pytz.timezone("Europe/Madrid")
         mock_now = tz.localize(datetime(2024, 1, 8, 9, 0, 0))  # Current time
         mock_execution_time = tz.localize(datetime(2024, 1, 8, 10, 0, 0))  # 1 hour later
-        mock_datetime.now.return_value = mock_now
+
+        # Mock datetime.now() to return different values for each call
+        mock_datetime.now.side_effect = [
+            mock_now,  # First call - initial time check
+            mock_execution_time,  # Second call - after exception, time has "advanced"
+        ]
 
         # Mock the calculate_next_execution function to return the future execution time
         with patch("pysportbot.service.booking.calculate_next_execution", return_value=mock_execution_time):
@@ -449,7 +464,7 @@ class TestBooking(unittest.TestCase):
         # Assert the correct sleep calls
         time_until_execution = (mock_execution_time - mock_now).total_seconds()
         reauth_sleep = time_until_execution - 60
-        remaining_time = 0
+        remaining_time = 0  # Should be 0 since second datetime.now returns execution_time
 
         # Expected sleep calls in the correct order
         expected_sleep_calls = [
