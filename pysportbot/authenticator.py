@@ -44,10 +44,12 @@ class Authenticator:
             response = self.session.post(Endpoints.USER, headers=self.headers, timeout=self.timeout)
             if response.status_code == 200:
                 response_dict = json.loads(response.content.decode("utf-8"))
-                return response_dict.get("user", False) is not False
+                return bool(response_dict.get("user"))
             else:
+                logger.debug(f"Session validation failed with status code: {response.status_code}")
                 return False
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Session validation failed with exception: {e}")
             return False
 
     def login(self, email: str, password: str) -> None:
