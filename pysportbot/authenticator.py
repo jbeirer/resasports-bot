@@ -1,6 +1,7 @@
 import ast
 import json
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlparse, urlencode
+
 
 from bs4 import BeautifulSoup
 
@@ -41,12 +42,14 @@ class Authenticator:
             bool: True if session is valid, False otherwise.
         """
         try:
-            response = self.session.post(Endpoints.USER, headers=self.headers, timeout=self.timeout)
+            response = self.session.post(
+                Endpoints.USER, headers=self.headers, timeout=self.timeout)
             if response.status_code == 200:
                 response_dict = json.loads(response.content.decode("utf-8"))
                 return bool(response_dict.get("user"))
             else:
-                logger.debug(f"Session validation failed with status code: {response.status_code}")
+                logger.debug(
+                    f"Session validation failed with status code: {response.status_code}")
                 return False
         except Exception as e:
             logger.debug(f"Session validation failed with exception: {e}")
@@ -66,10 +69,13 @@ class Authenticator:
         logger.info("Starting login process...")
 
         # Step 1: Fetch CSRF token
-        logger.debug(f"GET {Endpoints.USER_LOGIN} | Headers: {json.dumps(self.headers, indent=2)}")
-        response = self.session.get(Endpoints.USER_LOGIN, headers=self.headers, timeout=self.timeout)
+        logger.debug(
+            f"GET {Endpoints.USER_LOGIN} | Headers: {json.dumps(self.headers, indent=2)}")
+        response = self.session.get(
+            Endpoints.USER_LOGIN, headers=self.headers, timeout=self.timeout)
         if response.status_code != 200:
-            logger.error(f"Failed to fetch login popup: {response.status_code}")
+            logger.error(
+                f"Failed to fetch login popup: {response.status_code}")
             raise RuntimeError(ErrorMessages.failed_fetch("login popup"))
         logger.debug("Login popup fetched successfully.")
 
@@ -87,29 +93,40 @@ class Authenticator:
             "_submit": "",
             "_force": "true",
         }
-        self.headers.update({"Content-Type": "application/x-www-form-urlencoded"})
+        self.headers.update(
+            {"Content-Type": "application/x-www-form-urlencoded"})
         logger.debug(
             f"POST {Endpoints.LOGIN_CHECK} | Headers: {json.dumps(self.headers, indent=2)} | "
             f"Payload: {json.dumps(payload, indent=2)}"
         )
-        response = self.session.post(Endpoints.LOGIN_CHECK, data=payload, headers=self.headers, timeout=self.timeout)
+        response = self.session.post(
+            Endpoints.LOGIN_CHECK, data=payload, headers=self.headers, timeout=self.timeout)
         if response.status_code != 200:
-            logger.error(f"Login failed: {response.status_code}, {response.text}")
+            logger.error(
+                f"Login failed: {response.status_code}, {response.text}")
             raise ValueError(ErrorMessages.failed_login())
         logger.info("Login successful!")
 
         # Step 3: Retrieve credentials for Nubapp
         cred_endpoint = Endpoints.get_cred_endpoint(self.centre)
-        logger.debug(f"GET {cred_endpoint} | Headers: {json.dumps(self.headers, indent=2)}")
-        response = self.session.get(cred_endpoint, headers=self.headers, timeout=self.timeout)
+        logger.debug(
+            f"GET {cred_endpoint} | Headers: {json.dumps(self.headers, indent=2)}")
+        response = self.session.get(
+            cred_endpoint, headers=self.headers, timeout=self.timeout)
         if response.status_code != 200:
-            logger.error(f"Failed to retrieve Nubapp credentials: {response.status_code}")
+            logger.error(
+                f"Failed to retrieve Nubapp credentials: {response.status_code}")
             raise RuntimeError(ErrorMessages.failed_fetch("credentials"))
-        nubapp_creds = ast.literal_eval(response.content.decode("utf-8"))["payload"]
+        nubapp_creds = ast.literal_eval(
+            response.content.decode("utf-8"))["payload"]
         nubapp_creds = {k: v[0] for k, v in parse_qs(nubapp_creds).items()}
         nubapp_creds["platform"] = "resasocial"
         nubapp_creds["network"] = "resasports"
-        logger.debug(f"Nubapp credentials retrieved: {json.dumps(nubapp_creds, indent=2)}")
+        logger.debug(
+            f"Nubapp credentials retrieved: {json.dumps(nubapp_creds, indent=2)}")
+        
+        # Save Nubapp credentials in the session
+        self.session.nubapp_creds = nubapp_creds
 
         # Step 4: Log in to Nubapp
         logger.debug(
@@ -117,29 +134,51 @@ class Authenticator:
             f"Params: {json.dumps(nubapp_creds, indent=2)}"
         )
         response = self.session.get(
-            Endpoints.NUBAP_LOGIN, headers=self.headers, params=nubapp_creds, timeout=self.timeout
+            Endpoints.NUBAP_LOGIN, headers=self.headers, params=nubapp_creds, timeout=self.timeout, allow_redirects=False
         )
-        if response.status_code != 200:
-            logger.error(f"Login to Nubapp failed: {response.status_code}, {response.text}")
+        if response.status_code != 302:
+            logger.error(
+                f"Login to Nubapp failed: {response.status_code}, {response.text}")
             raise ValueError(ErrorMessages.failed_login_nubapp())
         logger.info("Login to Nubapp successful!")
 
+        # Grab the bearer authentification token from Nubapp login
+        redirect_url = response.headers.get("Location", "")
+        parsed_url = urlparse(redirect_url)
+        token = parse_qs(parsed_url.query).get("token", [None])[0]
+        logger.debug(f"Bearer token for Nubapp authentication: {token}")
+        if not token:
+            logger.error(
+                "No token found in the redirect URL after Nubapp login.")
+            raise ValueError(ErrorMessages.failed_login_nubapp())
+
+        # Add bearer authentification token to header
+        self.headers["Authorization"] = f"Bearer {token}"
+
         # Step 5: Get user information
-        response = self.session.post(Endpoints.USER, headers=self.headers, allow_redirects=True, timeout=self.timeout)
+        payload = {
+            "id_application": nubapp_creds["id_application"],
+            "id_user": nubapp_creds["id_user"],
+        }
+        response = self.session.post(
+            Endpoints.USER, headers=self.headers, data=payload, timeout=self.timeout)
 
         if response.status_code == 200:
             response_dict = json.loads(response.content.decode("utf-8"))
-
-            if response_dict["user"]:
-                self.user_id = response_dict.get("user", {}).get("id_user")
+                                    
+            # Check if user key exists and has a valid value
+            if response_dict.get("data", {}).get("user"):
+                self.user_id = response_dict['data']['user']['id_user']
                 if self.user_id:
                     self.authenticated = True
                     logger.info(f"Authentication successful. User ID: {self.user_id}")
                 else:
                     self.authenticated = False
-                    raise ValueError()
+                    logger.error("Authentication failed: No user ID received")
+                    raise ValueError(ErrorMessages.failed_login())
             else:
                 self.authenticated = False
+                logger.error("Authentication failed: No user data in response")
                 raise ValueError(ErrorMessages.failed_login())
         else:
             logger.error(f"Failed to retrieve user information: {response.status_code}, {response.text}")

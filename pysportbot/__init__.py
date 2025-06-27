@@ -108,7 +108,7 @@ class SportBot:
         # The unique slot ID
         slot_id = target_slot["id_activity_calendar"]
         # The total member capacity of the slot
-        slot_capacity = target_slot["capacity"]
+        slot_capacity = target_slot["n_capacity"]
         # The number of members already inscribed in the slot
         slot_n_inscribed = target_slot["n_inscribed"]
         # Log slot capacity
