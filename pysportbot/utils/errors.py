@@ -131,11 +131,6 @@ class ErrorMessages:
         return "Login failed. Please check your credentials and try again."
 
     @staticmethod
-    def failed_login_nubapp() -> str:
-        """Return an error message for a failed login to Nubapp."""
-        return "Login to Nubapp failed. Please try again later."
-
-    @staticmethod
     def unknown_error(action: str) -> str:
         """Return an error message for an unknown error."""
         return f"An unknown error occurred during {action}. Please try again later."

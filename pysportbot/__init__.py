@@ -25,10 +25,32 @@ class SportBot:
         self._centres = Centres(print_centres)
         self._session: Session = Session()
         self._auth: Authenticator | None = None
-        self._activities: Activities = Activities(self._session)
-        self._bookings: Bookings = Bookings(self._session)
+        self._activities: Activities | None = None
+        self._bookings: Bookings | None = None
         self._df_activities: DataFrame | None = None
-        self._is_logged_in: bool = False  # State variable for login status
+        self._is_logged_in: bool = False
+
+    @property
+    def activities_manager(self) -> Activities:
+        """Get the activities manager, ensuring user is logged in."""
+        if not self._is_logged_in or self._auth is None:
+            raise PermissionError(ErrorMessages.not_logged_in())
+
+        # Lazy initialization - create only when first needed
+        if self._activities is None:
+            self._activities = Activities(self._auth)
+        return self._activities
+
+    @property
+    def bookings_manager(self) -> Bookings:
+        """Get the bookings manager, ensuring user is logged in."""
+        if not self._is_logged_in or self._auth is None:
+            raise PermissionError(ErrorMessages.not_logged_in())
+
+        # Lazy initialization - create only when first needed
+        if self._bookings is None:
+            self._bookings = Bookings(self._auth)
+        return self._bookings
 
     def set_log_level(self, log_level: str) -> None:
         set_log_level(log_level)
@@ -44,12 +66,19 @@ class SportBot:
 
         self._logger.info("Attempting to log in...")
         try:
+            # Login to get valid credentials
             self._auth.login(email, password)
-            self._df_activities = self._activities.fetch()
             self._is_logged_in = True
             self._logger.info("Login successful!")
+
+            # Fetch activities on first successful login
+            self._df_activities = self.activities_manager.fetch()
         except Exception:
             self._is_logged_in = False
+            # Clean up on failure
+            self._activities = None
+            self._bookings = None
+            self._auth = None
             self._logger.exception(ErrorMessages.login_failed())
             raise
 
@@ -58,37 +87,21 @@ class SportBot:
         return self._is_logged_in
 
     def activities(self, limit: int | None = None) -> DataFrame:
-        if not self._is_logged_in:
-            self._logger.error(ErrorMessages.not_logged_in())
-            raise PermissionError(ErrorMessages.not_logged_in())
-
         if self._df_activities is None:
-            self._logger.error(ErrorMessages.no_activities_loaded())
             raise ValueError(ErrorMessages.no_activities_loaded())
 
         df = self._df_activities[["name_activity", "id_activity"]]
         return df.head(limit) if limit else df
 
     def daily_slots(self, activity: str, day: str, limit: int | None = None) -> DataFrame:
-        if not self._is_logged_in:
-            self._logger.error(ErrorMessages.not_logged_in())
-            raise PermissionError(ErrorMessages.not_logged_in())
-
         if self._df_activities is None:
-            self._logger.error(ErrorMessages.no_activities_loaded())
             raise ValueError(ErrorMessages.no_activities_loaded())
 
-        df = self._activities.daily_slots(self._df_activities, activity, day)
+        df = self.activities_manager.daily_slots(self._df_activities, activity, day)
         return df.head(limit) if limit else df
 
     def book(self, activity: str, start_time: str) -> None:
-
-        if not self._is_logged_in:
-            self._logger.error(ErrorMessages.not_logged_in())
-            raise PermissionError(ErrorMessages.not_logged_in())
-
         if self._df_activities is None:
-            self._logger.error(ErrorMessages.no_activities_loaded())
             raise ValueError(ErrorMessages.no_activities_loaded())
 
         # Fetch the daily slots for the activity
@@ -108,7 +121,7 @@ class SportBot:
         # The unique slot ID
         slot_id = target_slot["id_activity_calendar"]
         # The total member capacity of the slot
-        slot_capacity = target_slot["capacity"]
+        slot_capacity = target_slot["n_capacity"]
         # The number of members already inscribed in the slot
         slot_n_inscribed = target_slot["n_inscribed"]
         # Log slot capacity
@@ -123,20 +136,15 @@ class SportBot:
 
         # Attempt to book the slot
         try:
-            self._bookings.book(slot_id)
+            self.bookings_manager.book(slot_id)
             self._logger.info(f"Successfully booked class '{activity}' on {start_time}")
         except ValueError:
             self._logger.error(f"Failed to book class '{activity}' on {start_time}")
 
     def cancel(self, activity: str, start_time: str) -> None:
-
         self._logger.debug(f"Attempting to cancel class '{activity}' on {start_time}")
-        if not self._is_logged_in:
-            self._logger.error(ErrorMessages.not_logged_in())
-            raise PermissionError(ErrorMessages.not_logged_in())
 
         if self._df_activities is None:
-            self._logger.error(ErrorMessages.no_activities_loaded())
             raise ValueError(ErrorMessages.no_activities_loaded())
 
         slots = self.daily_slots(activity, start_time.split(" ")[0])
@@ -148,7 +156,7 @@ class SportBot:
 
         slot_id = matching_slot.iloc[0]["id_activity_calendar"]
         try:
-            self._bookings.cancel(slot_id)
+            self.bookings_manager.cancel(slot_id)
             self._logger.info(f"Successfully cancelled class '{activity}' on {start_time}")
         except ValueError:
             self._logger.error(f"Failed to cancel class '{activity}' on {start_time}")
