@@ -1,7 +1,7 @@
 import json
 
+from .authenticator import Authenticator
 from .endpoints import Endpoints
-from .session import Session
 from .utils.errors import ErrorMessages
 from .utils.logger import get_logger
 
@@ -11,10 +11,14 @@ logger = get_logger(__name__)
 class Bookings:
     """Handles booking and cancellation of activity slots."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, authenticator: Authenticator) -> None:
         """Initialize the Bookings class."""
-        self.session = session.session
-        self.headers = session.headers
+        # Session
+        self.session = authenticator.session
+        # Nubapp credentials
+        self.creds = authenticator.creds
+        # Headers for requests
+        self.headers = authenticator.headers
 
     def book(self, slot_id: str) -> None:
         """
@@ -30,14 +34,10 @@ class Bookings:
         logger.debug(f"Attempting to book slot {slot_id}...")
 
         # Payload for booking
-        payload = {
-            "id_user": self.session.nubapp_creds["id_user"],
-            "id_activity_calendar": slot_id
-        }
+        payload = {"id_user": self.creds["id_user"], "id_activity_calendar": slot_id}
 
         # Send booking request
-        response = self.session.post(
-            Endpoints.BOOKING, data=payload, headers=self.headers)
+        response = self.session.post(Endpoints.BOOKING, data=payload, headers=self.headers)
         response_json = json.loads(response.content.decode("utf-8"))
         # Check success directly
         if response_json["success"]:
@@ -45,7 +45,7 @@ class Bookings:
         else:
             # Handle error cases
             error_code = response_json["error"]  # Now we know it exists when success=False
-            
+
             if error_code == 5:
                 logger.warning(f"Slot {slot_id} is already booked.")
                 raise ValueError(ErrorMessages.slot_already_booked())
@@ -72,14 +72,10 @@ class Bookings:
         logger.debug(f"Attempting to cancel slot {slot_id}...")
 
         # Payload for cancellation
-        payload = {
-            "id_user": self.session.nubapp_creds["id_user"],
-            "id_activity_calendar": slot_id
-        }
+        payload = {"id_user": self.creds["id_user"], "id_activity_calendar": slot_id}
 
         # Send cancellation request
-        response = self.session.post(
-            Endpoints.CANCELLATION, data=payload, headers=self.headers)
+        response = self.session.post(Endpoints.CANCELLATION, data=payload, headers=self.headers)
         response_json = json.loads(response.content.decode("utf-8"))
 
         # Handle response

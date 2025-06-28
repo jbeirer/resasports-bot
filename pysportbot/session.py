@@ -24,8 +24,6 @@ class Session:
             "Sec-Fetch-Site": "same-origin",
             "TE": "trailers",
         }
-        # Nubapp credentials of the session
-        self.nubapp_creds = None
         logger.info("Session initialized.")
 
     def set_header(self, key: str, value: str) -> None:

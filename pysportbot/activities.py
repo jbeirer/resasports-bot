@@ -1,11 +1,11 @@
 import json
+from datetime import datetime, timedelta
 
 import pandas as pd
 from pandas import DataFrame
-from datetime import datetime, timedelta
 
+from .authenticator import Authenticator
 from .endpoints import Endpoints
-from .session import Session
 from .utils.errors import ErrorMessages
 from .utils.logger import get_logger
 from .utils.time import get_day_bounds
@@ -16,10 +16,14 @@ logger = get_logger(__name__)
 class Activities:
     """Handles activity fetching and slot management."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, authenticator: Authenticator) -> None:
         """Initialize the Activities class."""
-        self.session = session.session
-        self.headers = session.headers
+        # Session
+        self.session = authenticator.session
+        # Nubapp credentials
+        self.creds = authenticator.creds
+        # Headers for requests
+        self.headers = authenticator.headers
 
     def fetch(self, days_ahead: int = 7) -> DataFrame:
         """
@@ -39,8 +43,7 @@ class Activities:
 
         # Calculate date range
         start_date = datetime.now().strftime("%Y-%m-%d")
-        end_date = (datetime.now() + timedelta(days=days_ahead)
-                    ).strftime("%Y-%m-%d")
+        end_date = (datetime.now() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
 
         # Get day bounds for the date range
         start_timestamp, _ = get_day_bounds(start_date)
@@ -48,15 +51,13 @@ class Activities:
 
         # Prepare payload for SLOTS endpoint
         payload = {
-            "id_application": self.session.nubapp_creds.get("id_application"),
-            "id_user": self.session.nubapp_creds.get("id_user"),
+            "id_application": self.creds.get("id_application"),
+            "id_user": self.creds.get("id_user"),
             "start_timestamp": start_timestamp,
-            "end_timestamp": end_timestamp
+            "end_timestamp": end_timestamp,
         }
-
         # Make request to SLOTS endpoint
-        response = self.session.post(
-            Endpoints.SLOTS, headers=self.headers, data=payload)
+        response = self.session.post(Endpoints.SLOTS, headers=self.headers, data=payload)
 
         if response.status_code != 200:
             error_msg = ErrorMessages.failed_fetch("activities from slots")
@@ -75,16 +76,12 @@ class Activities:
             df_activities = pd.DataFrame(activities)
 
             # Drop duplicates based on 'id_activity' and keep first occurrence
-            df_activities = df_activities.drop_duplicates(
-                subset=["id_activity"])
+            df_activities = df_activities.drop_duplicates(subset=["id_activity"])
 
             # Select only required columns and reset index
-            df_activities = df_activities[[
-                "id_activity", "name_activity", "id_category_activity"]].reset_index(drop=True)
-
-            logger.info(
-                f"Successfully fetched {len(df_activities)} unique activities.")
-            return df_activities
+            df_activities = df_activities[["id_activity", "name_activity", "id_category_activity"]].reset_index(
+                drop=True
+            )
 
         except json.JSONDecodeError as err:
             error_msg = "Invalid JSON response while fetching activities from slots."
@@ -98,6 +95,9 @@ class Activities:
             raise RuntimeError(error_msg) from err
         except Exception as err:
             error_msg = f"Unexpected error while parsing activities: {err}"
+        else:
+            logger.info(f"Successfully fetched {len(df_activities)} unique activities.")
+            return df_activities
 
     def daily_slots(self, df_activities: DataFrame, activity_name: str, day: str) -> DataFrame:
         """
@@ -115,12 +115,10 @@ class Activities:
             ValueError: If the specified activity is not found.
             RuntimeError: If slots cannot be fetched.
         """
-        logger.info(
-            f"Fetching available slots for '{activity_name}' on {day}...")
+        logger.info(f"Fetching available slots for '{activity_name}' on {day}...")
 
         # Check if the activity exists
-        activity_match = df_activities[df_activities["name_activity"]
-                                       == activity_name]
+        activity_match = df_activities[df_activities["name_activity"] == activity_name]
         if activity_match.empty:
             error_msg = ErrorMessages.activity_not_found(
                 activity_name, df_activities["name_activity"].unique().tolist()
@@ -137,14 +135,13 @@ class Activities:
 
         # Fetch slots
         payload = {
-            "id_application": self.session.nubapp_creds["id_application"],
-            "id_user": self.session.nubapp_creds["id_user"],
+            "id_application": self.creds["id_application"],
+            "id_user": self.creds["id_user"],
             "start_timestamp": day_bounds[0],
             "end_timestamp": day_bounds[1],
-            "id_category_activity": id_category_activity
+            "id_category_activity": id_category_activity,
         }
-        response = self.session.post(
-            Endpoints.SLOTS, headers=self.headers, data=payload)
+        response = self.session.post(Endpoints.SLOTS, headers=self.headers, data=payload)
 
         if response.status_code != 200:
             error_msg = ErrorMessages.failed_fetch("slots")
