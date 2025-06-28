@@ -95,9 +95,11 @@ class Activities:
             raise RuntimeError(error_msg) from err
         except Exception as err:
             error_msg = f"Unexpected error while parsing activities: {err}"
-        else:
-            logger.info(f"Successfully fetched {len(df_activities)} unique activities.")
-            return df_activities
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from err
+
+        logger.info(f"Successfully fetched {len(df_activities)} unique activities.")
+        return df_activities
 
     def daily_slots(self, df_activities: DataFrame, activity_name: str, day: str) -> DataFrame:
         """
