@@ -46,8 +46,8 @@ class Activities:
         end_date = (datetime.now() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
 
         # Get day bounds for the date range
-        start_timestamp, _ = get_day_bounds(start_date)
-        _, end_timestamp = get_day_bounds(end_date)
+        start_timestamp = get_day_bounds(start_date)[0]
+        end_timestamp = get_day_bounds(end_date)[1]
 
         # Prepare payload for SLOTS endpoint
         payload = {

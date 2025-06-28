@@ -1,4 +1,3 @@
-import ast
 import json
 from urllib.parse import parse_qs, urlparse
 
@@ -49,9 +48,9 @@ class Authenticator:
         except Exception as e:
             logger.debug(f"Session validation failed with exception: {e}")
             return False
-        else:
-            logger.debug(f"Session validation failed with status code: {response.status_code}")
-            return False
+
+        logger.debug(f"Session validation failed with status code: {response.status_code}")
+        return False
 
     def login(self, email: str, password: str) -> None:
         """
@@ -139,7 +138,8 @@ class Authenticator:
             raise RuntimeError(ErrorMessages.failed_fetch("credentials"))
 
         try:
-            creds_payload = ast.literal_eval(response.content.decode("utf-8"))["payload"]
+            response_data = json.loads(response.content.decode("utf-8"))
+            creds_payload = response_data.get("payload", "")
             creds = {k: v[0] for k, v in parse_qs(creds_payload).items()}
             creds.update({"platform": "resasocial", "network": "resasports"})
 
