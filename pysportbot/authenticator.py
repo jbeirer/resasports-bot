@@ -154,7 +154,7 @@ class Authenticator:
         logger.debug("Logging in to Nubapp")
 
         response = self.session.get(
-            Endpoints.NUBAP_LOGIN,
+            Endpoints.NUBAPP_LOGIN,
             headers=self.headers,
             params=self.creds,
             timeout=self.timeout,
