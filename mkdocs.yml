@@ -1,7 +1,7 @@
 site_name: pysportbot
 repo_url: https://github.com/jbeirer/pysportbot
 site_url: https://jbeirer.github.io/pysportbot
-site_description:  Python package for automatic, cell-based inference of clash-free simplified detector geometry.
+site_description: A python-based bot for automatic resasports slot booking 
 site_author: Joshua Falco Beirer
 edit_uri: edit/main/docs/
 repo_name: jbeirer/pysportbot
