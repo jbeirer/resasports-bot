@@ -9,7 +9,7 @@
 [![Activity](https://img.shields.io/github/commit-activity/m/jbeirer/resasports-bot?label=activity)](https://github.com/jbeirer/resasports-bot/commits/main/)
 [![License](https://img.shields.io/github/license/jbeirer/resasports-bot)](https://github.com/jbeirer/resasports-bot/blob/main/LICENSE)
 [![Documentation](https://img.shields.io/badge/api-docs-blue)](https://jbeirer.github.io/resasports-bot/)
-[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](https://github.com/jbeirer/resasports-bot/blob/main/CODE_OF_CONDUCT.md)
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg?label=Contributing)](https://github.com/jbeirer/resasports-bot/blob/main/CODE_OF_CONDUCT.md)
 [![Downloads](https://static.pepy.tech/badge/pysportbot)](https://pepy.tech/projects/pysportbot)
 
 PySportBot empowers you to programmatically book fitness classes at any sports center that uses the [Resasports](https://social.resasports.com/en/) booking management software.
