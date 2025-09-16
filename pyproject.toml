@@ -47,14 +47,14 @@ preview = true
 
 [tool.mypy]
 files = ["pysportbot"]
-disallow_untyped_defs = "True"
-no_implicit_optional = "True"
-check_untyped_defs = "True"
-warn_return_any = "True"
-warn_unused_ignores = "True"
-show_error_codes = "True"
-ignore_missing_imports= "True"
-disallow_any_unimported = "False"
+disallow_untyped_defs = true
+no_implicit_optional = true
+check_untyped_defs = true
+warn_return_any = true
+warn_unused_ignores = true
+show_error_codes = true
+ignore_missing_imports= true
+disallow_any_unimported = false
 
 
 [tool.pytest.ini_options]
