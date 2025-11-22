@@ -56,6 +56,7 @@ class Activities:
             "start_timestamp": start_timestamp,
             "end_timestamp": end_timestamp,
         }
+
         # Make request to SLOTS endpoint
         response = self.session.post(Endpoints.SLOTS, headers=self.headers, data=payload)
 

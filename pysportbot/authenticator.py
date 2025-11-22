@@ -1,7 +1,4 @@
 import json
-from urllib.parse import parse_qs, urlparse
-
-from bs4 import BeautifulSoup
 
 from .endpoints import Endpoints
 from .session import Session
@@ -12,206 +9,292 @@ logger = get_logger(__name__)
 
 
 class Authenticator:
-    """Handles user authentication and Nubapp login functionality."""
+    """
+    Handles user authentication and Nubapp login functionality.
+
+    Flow overview:
+
+      1. Login to Resasocial (api.resasocial.com) via /user/login
+         -> get Resasocial JWT + (id_user, id_application).
+
+      2. Store (id_user, id_application) in self.creds for use by Activities.
+
+      3. Call /secure/user/getSportUserToken with the Resasocial JWT
+         -> get Nubapp (sport.nubapp.com) JWT.
+
+      4. Store Nubapp JWT in self.headers["Authorization"].
+
+      5. Use Nubapp JWT to call /api/v4/users/getUser.php and verify the user.
+    """
 
     def __init__(self, session: Session, centre: str) -> None:
-        """
-        Initialize the Authenticator.
-
-        Args:
-            session (Session): An instance of the Session class.
-            centre (str): The centre selected by the user.
-        """
         self.session = session.session
+        # Base headers; will be enriched with Nubapp JWT after login
         self.headers = session.headers
-        self.creds: dict[str, str] = {}
+        # Centre is still passed in from the bot, but not used in the new flow
         self.centre = centre
         self.timeout = (5, 10)
 
         # Authentication state
-        self.authenticated = False
+        self.authenticated: bool = False
         self.user_id: str | None = None
 
-    def is_session_valid(self) -> bool:
-        """
-        Check if the current session is still valid.
+        # Minimal "credentials" object used by Activities
+        # (id_application, id_user) are filled after /user/login.
+        self.creds: dict[str, str] = {}
 
-        Returns:
-            bool: True if session is valid, False otherwise.
-        """
-        try:
-            response = self.session.post(Endpoints.USER, headers=self.headers, timeout=self.timeout)
-            if response.status_code == 200:
-                response_dict = json.loads(response.content.decode("utf-8"))
-                return bool(response_dict.get("user"))
+        # Resasocial (resasports) JWT state
+        self.resasocial_jwt: str | None = None
+        self.resasocial_refresh: str | None = None
+        self.id_user: str | None = None
+        self.id_application: str | None = None
 
-        except Exception as e:
-            logger.debug(f"Session validation failed with exception: {e}")
-            return False
+        # Nubapp JWT tokens used for authenticated sport.nubapp.com requests
+        self.sport_jwt: str | None = None
+        self.sport_refresh: str | None = None
 
-        logger.debug(f"Session validation failed with status code: {response.status_code}")
-        return False
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def login(self, email: str, password: str) -> None:
         """
-        Authenticate the user with email and password and log in to Nubapp.
+        Full login flow:
 
-        Args:
-            email (str): The user's email address.
-            password (str): The user's password.
-
-        Raises:
-            ValueError: If login credentials are invalid or authentication fails.
-            RuntimeError: If the login process fails due to system errors.
+          1. Resasocial JSON login (/user/login)
+          2. Fill self.creds with (id_application, id_user) for Activities
+          3. /secure/user/getSportUserToken -> Nubapp JWT
+          4. Store Nubapp JWT in headers and fetch user info to confirm identity
         """
         logger.info("Starting login process...")
 
         try:
-            # Fetch the CSRF token and perform login
-            csrf_token = self._fetch_csrf_token()
-            # Resasport login with CSRF token
-            self._resasports_login(email, password, csrf_token)
-            # Retrieve Nubapp credentials
-            self._retrieve_nubapp_credentials()
-            bearer_token = self._login_to_nubapp()
-            # Authenticate with the bearer token
-            self._authenticate_with_bearer_token(bearer_token)
-            # Fetch user information to complete the login process
+            self._resasocial_jwt_login(email, password)
+
+            # Expose IDs in the same structure Activities expects
+            self.creds = {
+                "id_application": str(self.id_application),
+                "id_user": str(self.id_user),
+            }
+
+            self._get_sport_user_token()
+            self._authenticate_with_bearer_token(self.sport_jwt)
             self._fetch_user_information()
 
+            self.authenticated = True
             logger.info("Login process completed successfully!")
 
-        except Exception as e:
+        except Exception as exc:
             self.authenticated = False
             self.user_id = None
-            logger.error(f"Login process failed: {e}")
-            raise
+            logger.error(f"Login process failed: {exc}")
+            # Normalize to a consistent login error for callers/tests
+            raise ValueError(ErrorMessages.failed_login()) from exc
 
-    def _fetch_csrf_token(self) -> str:
-        """Fetch CSRF token from the login page."""
-        logger.debug(f"Fetching CSRF token from {Endpoints.USER_LOGIN}")
-
-        response = self.session.get(Endpoints.USER_LOGIN, headers=self.headers, timeout=self.timeout)
-        if response.status_code != 200:
-            raise RuntimeError(ErrorMessages.failed_fetch("login popup"))
-
-        soup = BeautifulSoup(response.text, "html.parser")
-        csrf_tag = soup.find("input", {"name": "_csrf_token"})
-        if csrf_tag is None:
-            raise ValueError("CSRF token input not found on the page")
-
-        csrf_token = str(csrf_tag["value"])  # type: ignore[index]
-        logger.debug("CSRF token fetched successfully")
-        return csrf_token
-
-    def _resasports_login(self, email: str, password: str, csrf_token: str) -> None:
-        """Perform login to the main site."""
-        logger.debug("Performing site login")
-
-        payload = {
-            "_username": email,
-            "_password": password,
-            "_csrf_token": csrf_token,
-            "_submit": "",
-            "_force": "true",
-        }
-
-        headers = self.headers.copy()
-        headers.update({"Content-Type": "application/x-www-form-urlencoded"})
-
-        response = self.session.post(Endpoints.LOGIN_CHECK, data=payload, headers=headers, timeout=self.timeout)
-
-        if response.status_code != 200:
-            logger.error(f"Site login failed: {response.status_code}")
-            raise ValueError(ErrorMessages.failed_login())
-
-        logger.info("Site login successful!")
-
-    def _retrieve_nubapp_credentials(self) -> None:
-        """Retrieve Nubapp credentials from the centre endpoint."""
-        logger.debug("Retrieving Nubapp credentials")
-
-        cred_endpoint = Endpoints.get_cred_endpoint(self.centre)
-        response = self.session.get(cred_endpoint, headers=self.headers, timeout=self.timeout)
-
-        if response.status_code != 200:
-            raise RuntimeError(ErrorMessages.failed_fetch("credentials"))
+    def is_session_valid(self) -> bool:
+        """
+        Check whether the current Nubapp JWT is still valid by probing USER.
+        """
+        if not self.sport_jwt:
+            return False
 
         try:
-            response_data = json.loads(response.content.decode("utf-8"))
-            creds_payload = response_data.get("payload", "")
-            creds = {k: v[0] for k, v in parse_qs(creds_payload).items()}
-            creds.update({"platform": "resasocial", "network": "resasports"})
+            # At this point self.headers already contains Nubapp Authorization
+            response = self.session.post(
+                Endpoints.USER,
+                headers=self.headers,
+                timeout=self.timeout,
+            )
 
-            self.creds = creds
-            logger.debug("Nubapp credentials retrieved successfully")
+            if response.status_code != 200:
+                return False
 
-        except (ValueError, KeyError, SyntaxError) as e:
-            raise RuntimeError(f"Failed to parse credentials: {e}") from e
+            data = response.json()
+            return bool(data.get("data", {}).get("user"))
 
-    def _login_to_nubapp(self) -> str:
-        """Login to Nubapp and extract bearer token."""
-        logger.debug("Logging in to Nubapp")
+        except Exception as exc:
+            logger.debug(f"Session validation failed: {exc}")
+            return False
 
-        response = self.session.get(
-            Endpoints.NUBAPP_LOGIN,
-            headers=self.headers,
-            params=self.creds,
+    # ------------------------------------------------------------------
+    # Step 1: Resasocial JWT login
+    # ------------------------------------------------------------------
+
+    def _resasocial_jwt_login(self, email: str, password: str) -> None:
+        """Perform login via the /user/login JSON endpoint on api.resasocial.com."""
+        logger.debug("Logging in via Resasocial /user/login (JWT flow)")
+
+        payload = {"username": email, "password": password}
+        # Use a copy of the base headers: no Authorization here.
+        headers = self.headers.copy()
+
+        response = self.session.post(
+            Endpoints.USER_LOGIN,
+            json=payload,
+            headers=headers,
             timeout=self.timeout,
-            allow_redirects=False,
         )
 
-        if response.status_code != 302:
-            logger.error(f"Nubapp login failed: {response.status_code}")
+        if response.status_code != 200:
+            logger.error(
+                "JWT login failed with status %s. Body (truncated): %r",
+                response.status_code,
+                response.text[:200],
+            )
             raise ValueError(ErrorMessages.failed_login())
 
-        # Extract bearer token from redirect URL
-        redirect_url = response.headers.get("Location", "")
-        if not redirect_url:
+        try:
+            data = response.json()
+        except Exception as exc:
+            logger.error(
+                "JWT login returned non-JSON response. Body (truncated): %r",
+                response.text[:200],
+            )
+            raise ValueError(ErrorMessages.failed_login()) from exc
+
+        logger.debug("/user/login JSON response: %s", data)
+
+        self.resasocial_jwt = data.get("jwt_token")
+        self.resasocial_refresh = data.get("refresh_token")
+
+        apps = data.get("applications") or []
+        if not apps:
+            logger.error("No applications returned in /user/login response")
             raise ValueError(ErrorMessages.failed_login())
 
-        parsed_url = urlparse(redirect_url)
-        token = parse_qs(parsed_url.query).get("token", [None])[0]
+        first_app = apps[0]
+        self.id_application = first_app.get("id_application")
+        self.id_user = first_app.get("id_user")
 
+        if not self.resasocial_jwt or not self.id_user or not self.id_application:
+            logger.error(
+                "Missing required fields in /user/login response: "
+                f"jwt_token={self.resasocial_jwt}, id_user={self.id_user}, "
+                f"id_application={self.id_application}"
+            )
+            raise ValueError(ErrorMessages.failed_login())
+
+        logger.info(
+            "JWT login successful. id_user=%s, id_application=%s",
+            self.id_user,
+            self.id_application,
+        )
+
+    # ------------------------------------------------------------------
+    # Step 3: getSportUserToken -> Nubapp JWT
+    # ------------------------------------------------------------------
+
+    def _get_sport_user_token(self) -> None:
+        """
+        Request the Nubapp JWT token using the Resasocial JWT.
+        This replaces the old login_from_social.php redirect method.
+        """
+        logger.debug("Fetching Nubapp JWT via getSportUserToken")
+
+        if not self.resasocial_jwt or not self.id_user or not self.id_application:
+            logger.error("Cannot fetch sport user token without resasocial_jwt, id_user, id_application")
+            raise ValueError(ErrorMessages.failed_login())
+
+        # Local headers specific to this Resasocial-authenticated call
+        social_auth_headers = self.headers.copy()
+        social_auth_headers["Authorization"] = f"Bearer {self.resasocial_jwt}"
+
+        params = {
+            "id_user": self.id_user,
+            "id_application": self.id_application,
+        }
+
+        response = self.session.get(
+            Endpoints.SPORT_USER_TOKEN,
+            params=params,
+            headers=social_auth_headers,
+            timeout=self.timeout,
+        )
+
+        if response.status_code != 200:
+            logger.error(
+                "getSportUserToken failed with status %s. Body (truncated): %r",
+                response.status_code,
+                response.text[:200],
+            )
+            raise ValueError(ErrorMessages.failed_login())
+
+        try:
+            data = response.json()
+        except Exception as exc:
+            logger.error(
+                "getSportUserToken returned non-JSON response. Body (truncated): %r",
+                response.text[:200],
+            )
+            raise ValueError(ErrorMessages.failed_login()) from exc
+
+        logger.debug("getSportUserToken JSON: %s", data)
+
+        self.sport_jwt = data.get("jwt_token")
+        self.sport_refresh = data.get("refresh_token")
+
+        if not self.sport_jwt:
+            logger.error("No jwt_token found in getSportUserToken response")
+            raise ValueError(ErrorMessages.failed_login())
+
+        logger.info("Nubapp JWT obtained successfully.")
+
+    # ------------------------------------------------------------------
+    # Step 4: Set Authorization header for Nubapp
+    # ------------------------------------------------------------------
+
+    def _authenticate_with_bearer_token(self, token: str | None) -> None:
+        """
+        Store the Nubapp JWT in self.headers so that all subsequent
+        Nubapp API calls (including Activities) share the same auth.
+        """
         if not token:
             raise ValueError(ErrorMessages.failed_login())
 
-        logger.info("Nubapp login successful!")
-        return token
-
-    def _authenticate_with_bearer_token(self, token: str) -> None:
-        """Add bearer token to headers for authentication."""
-        logger.debug("Setting up bearer token authentication")
+        logger.debug("Setting Nubapp Authorization header")
         self.headers["Authorization"] = f"Bearer {token}"
 
+    # ------------------------------------------------------------------
+    # Step 5: Nubapp User info
+    # ------------------------------------------------------------------
+
     def _fetch_user_information(self) -> None:
-        """Fetch and validate user information."""
-        logger.debug("Fetching user information")
+        """
+        Fetch and validate user information from Nubapp.
 
-        payload = {
-            "id_application": self.creds["id_application"],
-            "id_user": self.creds["id_user"],
-        }
+        No extra payload — we just rely on the Nubapp JWT already set in self.headers.
+        """
+        logger.debug("Fetching user info from Nubapp")
 
-        response = self.session.post(Endpoints.USER, headers=self.headers, data=payload, timeout=self.timeout)
+        if not self.sport_jwt:
+            raise ValueError(ErrorMessages.failed_login())
+
+        response = self.session.post(
+            Endpoints.USER,
+            headers=self.headers,
+            timeout=self.timeout,
+        )
 
         if response.status_code != 200:
+            logger.error(
+                "Fetching user info failed with status %s. Body (truncated): %r",
+                response.status_code,
+                response.text[:200],
+            )
             raise ValueError(ErrorMessages.failed_login())
 
         try:
-            response_dict = json.loads(response.content.decode("utf-8"))
-            user_data = response_dict.get("data", {}).get("user")
+            data = response.json()
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise ValueError(f"Failed to parse user information: {exc}") from exc
 
-            if not user_data:
-                raise ValueError("No user data found in response")
+        user_data = data.get("data", {}).get("user")
+        if not user_data:
+            raise ValueError("No user data found in response")
 
-            user_id = user_data.get("id_user")
-            if not user_id:
-                raise ValueError("No user ID found in response")
+        user_id = user_data.get("id_user")
+        if not user_id:
+            raise ValueError("No user ID found in response")
 
-            self.user_id = str(user_id)
-            self.authenticated = True
-            logger.info(f"Authentication successful. User ID: {self.user_id}")
-
-        except (json.JSONDecodeError, KeyError) as e:
-            raise ValueError(f"Failed to parse user information: {e}") from e
+        self.user_id = str(user_id)
+        logger.info("Authentication successful. User ID: %s", self.user_id)
