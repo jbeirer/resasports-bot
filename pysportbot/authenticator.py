@@ -152,7 +152,11 @@ class Authenticator:
             )
             raise ValueError(ErrorMessages.failed_login()) from exc
 
-        logger.debug("/user/login JSON response: %s", data)
+        logger.debug(
+            "/user/login response keys: %s; applications count=%d",
+            list(data.keys()),
+            len(data.get("applications") or []),
+        )
 
         self.resasocial_jwt = data.get("jwt_token")
         self.resasocial_refresh = data.get("refresh_token")
@@ -228,7 +232,7 @@ class Authenticator:
             )
             raise ValueError(ErrorMessages.failed_login()) from exc
 
-        logger.debug("getSportUserToken JSON: %s", data)
+        logger.debug("response keys: %s", list(data.keys()))
 
         self.sport_jwt = data.get("jwt_token")
         self.sport_refresh = data.get("refresh_token")
