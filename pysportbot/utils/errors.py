@@ -20,7 +20,7 @@ class ErrorMessages:
 
     @staticmethod
     def invalid_class_definition() -> str:
-        return "Each class must include 'activity', 'class_day', " "'class_time'"
+        return "Each class must include 'activity', 'class_day', 'class_time'"
 
     @staticmethod
     def invalid_booking_execution_format() -> str:
