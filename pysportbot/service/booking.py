@@ -103,7 +103,6 @@ def schedule_bookings(
     time_until_execution = (execution_time - now).total_seconds()
 
     if time_until_execution > 0:
-
         logger.info(
             f"Waiting {time_until_execution:.2f} seconds until global execution time: "
             f"{execution_time.strftime('%Y-%m-%d %H:%M:%S %z')}."

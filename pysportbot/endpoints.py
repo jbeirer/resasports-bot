@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class Endpoints(str, Enum):
+class Endpoints(StrEnum):
     """
     Centralized collection of API endpoints used by the bot.
 
