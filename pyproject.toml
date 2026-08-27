@@ -14,25 +14,25 @@ packages = [
 dynamic = ["requires-python", "dependencies"]
 
 [tool.poetry.dependencies]
-python = ">=3.11,<3.15"
-requests = "^2.32.5"
-pandas = "^3.0.3"
-pytz = "^2026.2"
+python = ">=3.11,<4.0"
+requests = "^2.34.2"
+pandas = "^3.0.5"
+pytz = "^2026.3"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.1.1"
-pytest-cov = "^7.0.0"
+pytest-cov = "^7.1.0"
 deptry = "^0.25.1"
-mypy = "^2.3.0"
-pre-commit = "^4.3.0"
-tox = "^4.30.2"
+mypy = "^2.3.1"
+pre-commit = "^4.6.2"
+tox = "^4.60.1"
 ipykernel = "^7.3.0"
-types-pytz = "^2026.2.0.20260518"
-types-requests = "^2.32.4.20250913"
+types-pytz = "^2026.3.1.20260727"
+types-requests = "^2.33.0.20260712"
 
 [tool.poetry.group.docs.dependencies]
 mkdocs = "^1.6.1"
-mkdocs-material = "^9.6.20"
+mkdocs-material = "^9.7.7"
 mkdocstrings = {extras = ["python"], version = "^1.0.6"}
 
 [build-system]
