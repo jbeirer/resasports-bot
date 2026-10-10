@@ -8,7 +8,7 @@ import math
 import os
 import sys
 from collections.abc import Sequence
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -19,7 +19,8 @@ from . import __version__
 from .exceptions import ConfigError, SportBotError
 from .logging_utils import PACKAGE_LOGGER, _find_handler, configure_logging
 from .models import Slot
-from .service.config import ENV_VARS, WEEKDAYS, load_config
+from .service import notify
+from .service.config import ENV_VARS, NOTIFY_ENV_VARS, NOTIFY_ON, WEEKDAYS, load_config
 from .service.service import run_service
 from .sportbot import SportBot, _parse_start
 
@@ -281,18 +282,33 @@ def _cmd_cancel(args: argparse.Namespace) -> int:
 
 def _cmd_run(args: argparse.Namespace) -> int:
     config = load_config(args.config)
-    results = run_service(
-        config,
-        booking_delay=args.booking_delay,
-        retry_attempts=args.retry_attempts,
-        retry_delay=args.retry_delay,
-        poll_interval=args.poll_interval,
-        poll_window=args.poll_window,
-        time_zone=args.time_zone,
-        log_level=args.log_level,
-        max_threads=args.max_threads,
-        dry_run=args.dry_run,
-    )
+    notify_settings = config.notify
+    if args.notify_on is not None:
+        if notify_settings is None:
+            logger.warning(f"--notify-on has no effect: set {NOTIFY_ENV_VARS['notify_url']} to get notifications.")
+        else:
+            notify_settings = replace(notify_settings, on=args.notify_on)
+
+    try:
+        results = run_service(
+            config,
+            booking_delay=args.booking_delay,
+            retry_attempts=args.retry_attempts,
+            retry_delay=args.retry_delay,
+            poll_interval=args.poll_interval,
+            poll_window=args.poll_window,
+            time_zone=args.time_zone,
+            log_level=args.log_level,
+            max_threads=args.max_threads,
+            dry_run=args.dry_run,
+        )
+    except Exception as e:
+        # E.g. a failed login: notify, then let main() report the error as usual
+        if notify_settings is not None:
+            notify.send(notify_settings, error=e, dry_run=args.dry_run)
+        raise
+    if notify_settings is not None:
+        notify.send(notify_settings, results, dry_run=args.dry_run)
     # Fail if any class was not booked, so that e.g. a scheduled GitHub Actions run shows up as failed
     return EXIT_OK if all(r.ok for r in results) else EXIT_FAILURE
 
@@ -367,7 +383,10 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[common],
         help="Run the booking service with a config file.",
         description="Run the booking service with a JSON or TOML config file.",
-        epilog="The SPORTBOT_EMAIL, SPORTBOT_PASSWORD and SPORTBOT_CENTRE env vars override the config file.",
+        epilog=(
+            "The SPORTBOT_EMAIL, SPORTBOT_PASSWORD, SPORTBOT_CENTRE, SPORTBOT_NOTIFY_URL and SPORTBOT_NOTIFY_ON env "
+            "vars override the config file."
+        ),
     )
     run.add_argument("--config", required=True, help="Path to the JSON or TOML configuration file.")
     run.add_argument(
@@ -420,6 +439,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Do everything, including waiting and checking that the slots exist and are open, but send no booking "
             "request. The real booking can still fail, e.g. if the slot fills up first."
+        ),
+    )
+    run.add_argument(
+        "--notify-on",
+        choices=NOTIFY_ON,
+        default=None,
+        help=(
+            "When to send a notification to the ntfy topic URL in SPORTBOT_NOTIFY_URL or notify_url: after every run, "
+            "or only if a class was not booked or the run failed [default: $SPORTBOT_NOTIFY_ON, notify_on, or always]."
         ),
     )
     run.set_defaults(handler=_cmd_run)
