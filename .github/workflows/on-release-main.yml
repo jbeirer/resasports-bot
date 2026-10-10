@@ -9,35 +9,35 @@ jobs:
 
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
     steps:
       - name: Check out
         uses: actions/checkout@v7
 
       - name: Set up the environment
-        uses: ./.github/actions/setup-poetry-env
+        uses: ./.github/actions/setup-uv-env
 
-      - name: Export tag
-        id: vars
-        run: echo tag=${GITHUB_REF#refs/*/} >> $GITHUB_OUTPUT
+      - name: Set version from release tag
+        run: uv version "${GITHUB_REF_NAME}"
 
-      - name: Build and publish
-        run: |
-          source .venv/bin/activate
-          poetry version $RELEASE_VERSION
-          make build-and-publish
-        env:
-          PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
-          RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
+      - name: Build
+        run: uv build
+
+      - name: Publish to PyPI
+        run: uv publish
 
   deploy-docs:
     needs: publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Check out
         uses: actions/checkout@v7
 
       - name: Set up the environment
-        uses: ./.github/actions/setup-poetry-env
+        uses: ./.github/actions/setup-uv-env
 
       - name: Deploy documentation
-        run: poetry run mkdocs gh-deploy --force
+        run: uv run mkdocs gh-deploy --force

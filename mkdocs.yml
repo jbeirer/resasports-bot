@@ -1,10 +1,10 @@
 site_name: pysportbot
-repo_url: https://github.com/jbeirer/pysportbot
-site_url: https://jbeirer.github.io/pysportbot
+repo_url: https://github.com/jbeirer/resasports-bot
+site_url: https://jbeirer.github.io/resasports-bot/
 site_description: A python-based bot for automatic resasports slot booking.
 site_author: Joshua Falco Beirer
 edit_uri: edit/main/docs/
-repo_name: jbeirer/pysportbot
+repo_name: jbeirer/resasports-bot
 copyright: Maintained by Joshua Falco Beirer.
 
 nav:
@@ -41,7 +41,7 @@ theme:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/jbeirer/pysportbot
+      link: https://github.com/jbeirer/resasports-bot
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/pysportbot
 

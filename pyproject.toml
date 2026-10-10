@@ -1,48 +1,56 @@
 [project]
 name = "pysportbot"
-version = "0.0.1"
+version = "0.0.1" # overwritten at release time by `uv version`
 description = "A python-based bot for automatic resasports slot booking"
 authors = [
   { name = "Joshua Falco Beirer", email = "jbeirer@cern.ch" }
 ]
-repository = "https://github.com/jbeirer/resasports-bot"
-documentation = "https://jbeirer.github.io/resasports-bot/"
 readme = "README.md"
-packages = [
-  { include = "pysportbot" }
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+  "requests>=2.34.2",
+  "pandas>=3.0.5",
+  "pytz>=2026.3",
 ]
-dynamic = ["requires-python", "dependencies"]
 
-[tool.poetry.dependencies]
-python = ">=3.11,<4.0"
-requests = "^2.34.2"
-pandas = "^3.0.5"
-pytz = "^2026.3"
+[project.urls]
+Repository = "https://github.com/jbeirer/resasports-bot"
+Documentation = "https://jbeirer.github.io/resasports-bot/"
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^9.1.1"
-pytest-cov = "^7.1.0"
-deptry = "^0.25.1"
-mypy = "^2.3.1"
-pre-commit = "^4.6.2"
-tox = "^4.60.1"
-ipykernel = "^7.3.0"
-types-pytz = "^2026.3.1.20260727"
-types-requests = "^2.33.0.20260712"
+[dependency-groups]
+dev = [
+  "pytest>=9.1.1",
+  "pytest-cov>=7.1.0",
+  "deptry>=0.25.1",
+  "mypy>=2.3.1",
+  "pre-commit>=4.6.2",
+  "types-pytz>=2026.3.1.20260727",
+  "types-requests>=2.33.0.20260712",
+]
+docs = [
+  "mkdocs>=1.6.1",
+  "mkdocs-material>=9.7.7",
+  "mkdocstrings[python]>=1.0.6",
+]
 
-[tool.poetry.group.docs.dependencies]
-mkdocs = "^1.6.1"
-mkdocs-material = "^9.7.7"
-mkdocstrings = {extras = ["python"], version = "^1.0.6"}
+[tool.uv]
+default-groups = ["dev", "docs"]
 
 [build-system]
-requires = ["poetry-core>=2.4.1"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
 
-[tool.black]
-line-length = 120
-target-version = ['py313']
-preview = true
+[tool.hatch.build.targets.wheel]
+packages = ["pysportbot"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/pysportbot",
+  "/tests",
+  "/README.md",
+  "/LICENSE",
+]
 
 [tool.mypy]
 files = ["pysportbot"]
@@ -64,7 +72,7 @@ filterwarnings = [
 ]
 
 [tool.ruff]
-target-version = "py313"
+target-version = "py311"
 line-length = 120
 fix = true
 
