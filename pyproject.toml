@@ -26,21 +26,19 @@ dev = [
   "pytest>=9.1.1",
   "pytest-cov>=7.1.0",
   "deptry>=0.25.1",
-  "mypy>=2.3.1",
+  "mypy>=2.4.0",
   "pre-commit>=4.6.2",
-  "types-requests>=2.33.0.20260712",
+  "types-requests>=2.33.0.20261006",
   "responses>=0.26.3",
 ]
 docs = [
   "mkdocs>=1.6.1",
   "mkdocs-material>=9.7.7",
-  "mkdocstrings[python]>=1.0.6",
+  "mkdocstrings[python]>=1.0.7",
 ]
 
 [tool.uv]
 default-groups = ["dev", "docs"]
-# mkdocstrings 1.0.6 is incompatible with pymdown-extensions 12 (Highlight.__init__ requires `md`)
-constraint-dependencies = ["pymdown-extensions<12"]
 
 [build-system]
 requires = ["hatchling>=1.27"]
