@@ -289,11 +289,13 @@ pysportbot: 1/2 booked
 ❌ Spinning · Tue 2026-01-13 07:00 · full
 ```
 
-- **When:** after every run by default. With `notify_on` set to `"failure"`, or `--notify-on failure`, only if a class was not booked or the run failed. A run that fails before booking, e.g. because the login failed, sends the error message.
+- **When:** after every run by default. With `notify_on` set to `"failure"`, or `--notify-on failure`, only if a class was not booked or the run failed. A run that fails before booking, e.g. because the login failed, sends the error message. If the config file itself cannot be loaded, the error message is sent only if the notification settings are in the `SPORTBOT_NOTIFY_*` env vars, because the file cannot be read.
 - **Language:** English by default. Set `notify_language`, or `SPORTBOT_NOTIFY_LANGUAGE`, to `de` (German), `es` (Spanish), `fr` (French) or `it` (Italian), e.g. for `"de"`: `pysportbot: 1/2 gebucht` and `✅ Yoga · Mo 12.01.2026 18:00 · gebucht (3 Versuche)`. Error messages stay in English.
 - **Testing:** `pysportbot run --config config.json --dry-run` sends the notification too, with the title prefixed by `[dry run]`.
 - **Self-hosted ntfy:** set the URL of the topic on your server instead. It must use `https://`, except for `localhost`.
-- **Failures:** if the notification cannot be sent, the service logs a warning and carries on. The exit code stays the same.
+- **Protected topics:** put the credentials in the URL. Use `https://:<access-token>@ntfy.example.com/<topic>` for an access token (with an empty username, ntfy treats the password as a token), or `https://<username>:<password>@ntfy.example.com/<topic>` for a password.
+- **Long messages:** a notification holds up to 4,096 bytes. If the summary is longer, e.g. with many classes, it lists the classes that were not booked first and ends with how many classes it leaves out.
+- **Failures:** if the notification cannot be sent, the service logs a warning and carries on. The exit code stays the same. It also warns if the URL answers, but not like an ntfy server, e.g. with a login page.
 
 **Keep the topic URL secret.** Anyone who knows it can read your notifications and send you fake ones, so treat it like a password: set it via `SPORTBOT_NOTIFY_URL` rather than in a committed config file. The service never logs it.
 
