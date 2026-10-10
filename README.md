@@ -160,6 +160,8 @@ The configuration supports these keys:
 | `centre` | string | yes, in the file or the env | `SPORTBOT_CENTRE` |
 | `booking_execution` | `"now"` or `"<weekday> <time>"` | no, defaults to `"now"` | |
 | `classes` | non-empty list of classes, each with `activity`, `class_day` (weekday) and `class_time` (time) | yes | |
+| `notify_url` | ntfy topic URL, see [Notifications](#notifications) | no, notifications are off without it | `SPORTBOT_NOTIFY_URL` |
+| `notify_on` | `"always"` or `"failure"` | no, defaults to `"always"` | `SPORTBOT_NOTIFY_ON` |
 
 - **Env vars** override the corresponding keys in the file. Empty env vars are ignored.
 - **Weekdays** are English day names or their 3-letter abbreviations, case-insensitive, e.g. `Monday` or `mon`.
@@ -235,7 +237,8 @@ Currently supported options include:
 6. `--time-zone`: sets the time zone for the service [default: Europe/Madrid]
 7. `--log-level`: sets the log-level of the service [default: INFO]
 8. `--max-threads`: caps the number of classes booked in parallel, must be a positive integer [default: no cap]
-9. `--dry-run`: does everything, including logging in, waiting until the execution time and checking that the slots exist and are neither full nor cancelled, but sends no booking requests. The real booking can still fail, e.g. if a slot fills up in the meantime. With `"booking_execution": "now"` it runs immediately, as a quick check of your configuration.
+9. `--notify-on`: `always` or `failure`, overrides `notify_on` and `SPORTBOT_NOTIFY_ON`, see [Notifications](#notifications)
+10. `--dry-run`: does everything, including logging in, waiting until the execution time and checking that the slots exist and are neither full nor cancelled, but sends no booking requests. The real booking can still fail, e.g. if a slot fills up in the meantime. With `"booking_execution": "now"` it runs immediately, as a quick check of your configuration.
 
 All delays accept fractions of a second, e.g. `--retry-delay 0.5`.
 
@@ -266,6 +269,32 @@ What the service does after a failed attempt depends on the error:
 
 At the end, the service logs a summary with the status and the number of attempts of each class.
 It exits with code `0` if every class is `booked` or `already booked` (or would be booked in a `--dry-run`), and with code `1` otherwise, so that a failed booking is easy to spot, e.g. in a scheduled GitHub Actions run.
+
+### Notifications
+
+The service can push a summary of each run to your phone with [ntfy](https://ntfy.sh), a free push notification service that needs no account:
+
+1. Install the ntfy app from the [App Store](https://apps.apple.com/app/ntfy/id1625396347), [Google Play](https://play.google.com/store/apps/details?id=io.heckel.ntfy) or [F-Droid](https://f-droid.org/packages/io.heckel.ntfy/).
+2. Pick a long, random topic name that nobody can guess, e.g. from `python -c "import secrets; print('pysportbot-' + secrets.token_urlsafe(12))"`, and subscribe to it in the app.
+3. Set the topic URL:
+   ```bash
+   export SPORTBOT_NOTIFY_URL="https://ntfy.sh/<your-topic>"
+   ```
+
+After each `pysportbot run` you then get a notification such as:
+
+```text
+pysportbot: 1/2 booked
+✅ Yoga · Mon 2026-01-12 18:00 · booked (3 attempts)
+❌ Spinning · Tue 2026-01-13 07:00 · full
+```
+
+- **When:** after every run by default. With `notify_on` set to `"failure"`, or `--notify-on failure`, only if a class was not booked or the run failed. A run that fails before booking, e.g. because the login failed, sends the error message.
+- **Testing:** `pysportbot run --config config.json --dry-run` sends the notification too, with the title prefixed by `[dry run]`.
+- **Self-hosted ntfy:** set the URL of the topic on your server instead. It must use `https://`, except for `localhost`.
+- **Failures:** if the notification cannot be sent, the service logs a warning and carries on. The exit code stays the same.
+
+**Keep the topic URL secret.** Anyone who knows it can read your notifications and send you fake ones, so treat it like a password: set it via `SPORTBOT_NOTIFY_URL` rather than in a committed config file. The service never logs it.
 
 ## Automating Weekly Bookings with GitHub Actions
 
@@ -303,6 +332,8 @@ jobs:
           SPORTBOT_EMAIL: ${{ secrets.SPORTBOT_EMAIL }}
           SPORTBOT_PASSWORD: ${{ secrets.SPORTBOT_PASSWORD }}
           SPORTBOT_CENTRE: ${{ secrets.SPORTBOT_CENTRE }}
+          # Optional, see Notifications
+          SPORTBOT_NOTIFY_URL: ${{ secrets.SPORTBOT_NOTIFY_URL }}
           # GitHub Actions renders colored logs, but its output is not a terminal
           FORCE_COLOR: "1"
         run: |
@@ -311,6 +342,7 @@ jobs:
 **Notes:**
 1. Start the workflow at least 10 minutes before your booking execution time (e.g., 07:30 Madrid time). Scheduled GitHub Actions runs often start several minutes late, and the service waits until the execution time anyway.
 2. If a class could not be booked, `pysportbot run` exits with code 1 and GitHub marks the run as failed. GitHub can notify you of failed runs, e.g. by email, depending on your notification settings, so you know to book the class yourself.
+3. To get a push notification on your phone instead, add your ntfy topic URL as the `SPORTBOT_NOTIFY_URL` secret, see [Notifications](#notifications). Without the secret, notifications are simply off.
 
 
 ## LICENSE
