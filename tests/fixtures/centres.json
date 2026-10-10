@@ -1,0 +1,19 @@
+{
+  "applications": [
+    {
+      "slug": "test-centre",
+      "name": "Test Centre",
+      "address": {"town": "Testville", "country": "Spain", "street_line": "Calle Falsa 123"}
+    },
+    {
+      "slug": "other-centre",
+      "name": "Other Centre",
+      "address": {"town": "Otherville", "country": "Spain", "street_line": "Avenida Ejemplo 45"}
+    },
+    {
+      "slug": "third-centre",
+      "name": "Third Centre",
+      "address": {"town": "Thirdville", "country": "Spain", "street_line": "Plaza Prueba 6"}
+    }
+  ]
+}

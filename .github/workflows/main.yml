@@ -8,9 +8,11 @@ on:
     types: [opened, synchronize, reopened]
   schedule:
     - cron: '0 0 * * *'
+  workflow_dispatch:
 
 jobs:
   quality:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - name: Check out
@@ -28,6 +30,7 @@ jobs:
         run: make check
 
   test:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -42,11 +45,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Run tests
-        env:
-          SPORTBOT_EMAIL: ${{ secrets.SPORTBOT_EMAIL }}
-          SPORTBOT_PASSWORD: ${{ secrets.SPORTBOT_PASSWORD }}
-          SPORTBOT_CENTRE: ${{ secrets.SPORTBOT_CENTRE }}
+      - name: Run offline tests
         run: make test
 
       - name: Upload coverage reports to Codecov with GitHub Actions
@@ -54,7 +53,28 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
+  test-live:
+    # Fork PRs have no access to secrets
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-uv-env
+        with:
+          python-version: '3.13'
+
+      - name: Run live API tests
+        env:
+          SPORTBOT_EMAIL: ${{ secrets.SPORTBOT_EMAIL }}
+          SPORTBOT_PASSWORD: ${{ secrets.SPORTBOT_PASSWORD }}
+          SPORTBOT_CENTRE: ${{ secrets.SPORTBOT_CENTRE }}
+        run: make test-live
+
   check-docs:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - name: Check out

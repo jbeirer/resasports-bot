@@ -1,0 +1,5 @@
+{
+  "jwt_token": "resasocial-jwt-token",
+  "refresh_token": "resasocial-refresh-token",
+  "applications": [{"id_application": 1234, "id_user": 5678}]
+}

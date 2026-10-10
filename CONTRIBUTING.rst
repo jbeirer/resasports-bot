@@ -109,6 +109,14 @@ development. Please note this documentation assumes you already have
 
         make test
 
+   These tests run offline against mocked HTTP responses and need no credentials. The live tests
+   in ``tests/live/`` talk to the real API and only run on request. Set ``SPORTBOT_EMAIL``,
+   ``SPORTBOT_PASSWORD`` and ``SPORTBOT_CENTRE``, then run:
+
+   .. code-block:: bash
+
+        make test-live
+
 | 8. Optionally, run the tests against a specific Python version supported by the package:
 
    .. code-block:: bash
