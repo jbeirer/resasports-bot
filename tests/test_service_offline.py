@@ -1,4 +1,7 @@
-from datetime import datetime, timedelta
+import json
+import sys
+from dataclasses import replace
+from datetime import datetime, time, timedelta
 from unittest.mock import MagicMock, call, patch
 from zoneinfo import ZoneInfo
 
@@ -7,23 +10,35 @@ import requests
 import responses
 
 from pysportbot.endpoints import Endpoints
-from pysportbot.exceptions import ConfigError
+from pysportbot.service.__main__ import main
 from pysportbot.service.booking import attempt_booking, schedule_bookings
-from pysportbot.service.config_validator import validate_config
-from pysportbot.service.scheduling import calculate_next_execution
+from pysportbot.service.config import ClassSpec, ServiceConfig, WeeklyTime, load_config
+from pysportbot.service.scheduling import next_execution
 from pysportbot.service.service import run_service
 
-# A Friday one week before the fixture's slots on Friday 2030-01-04
-FROZEN_NOW = datetime(2029, 12, 28, 7, 30, tzinfo=ZoneInfo("Europe/Madrid"))
-OPEN_SLOT_TIME = "12:00:00"  # Gimnasio, places left
-FULL_SLOT_TIME = "10:00:00"  # Gimnasio, n_inscribed == n_capacity
+MADRID = ZoneInfo("Europe/Madrid")
+FRIDAY, SUNDAY = 4, 6
+# The fixture's Gimnasio slots on Friday 2030-01-04
+OPEN_SLOT_START = datetime(2030, 1, 4, 12, 0, tzinfo=MADRID)  # places left
+FULL_SLOT_START = datetime(2030, 1, 4, 10, 0, tzinfo=MADRID)  # n_inscribed == n_capacity
 
-VALID_CONFIG = {
-    "email": "user@example.com",
-    "password": "password",
-    "centre": "test-centre",
-    "booking_execution": "Friday 07:30:00",
-    "classes": [{"activity": "Gimnasio", "class_day": "Friday", "class_time": OPEN_SLOT_TIME}],
+VALID_CONFIG = ServiceConfig(
+    email="user@example.com",
+    password="password",
+    centre="test-centre",
+    execution=WeeklyTime(FRIDAY, time(7, 30)),
+    classes=(ClassSpec("Gimnasio", FRIDAY, time(12, 0)),),
+)
+CREDENTIALS_ENV = {
+    "SPORTBOT_EMAIL": "user@example.com",
+    "SPORTBOT_PASSWORD": "password",
+    "SPORTBOT_CENTRE": "test-centre",
+}
+# A Friday one week before the fixture's slots on Friday 2030-01-04
+FROZEN_NOW = datetime(2029, 12, 28, 7, 30, tzinfo=MADRID)
+CONFIG_WITHOUT_CREDENTIALS = {
+    "booking_execution": "now",
+    "classes": [{"activity": "Gimnasio", "class_day": "Friday", "class_time": "12:00"}],
 }
 
 
@@ -32,11 +47,17 @@ def _booking_calls(mocked_api):
 
 
 @pytest.fixture
-def frozen_class_day():
-    """Make `calculate_class_day("Friday")` resolve to 2030-01-04."""
-    with patch("pysportbot.service.scheduling.datetime", wraps=datetime) as mock_datetime:
+def frozen_now():
+    with patch("pysportbot.service.booking.datetime", wraps=datetime) as mock_datetime:
         mock_datetime.now.return_value = FROZEN_NOW
         yield
+
+
+@pytest.fixture
+def config_path(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(CONFIG_WITHOUT_CREDENTIALS))
+    return path
 
 
 @pytest.fixture
@@ -49,15 +70,14 @@ def _attempt(bot, retry_attempts=3, retry_delay=1):
     attempt_booking(
         bot,
         activity="Gimnasio",
-        class_day="Friday",
-        class_time=OPEN_SLOT_TIME,
+        start=OPEN_SLOT_START,
         retry_attempts=retry_attempts,
         retry_delay=retry_delay,
     )
 
 
 @pytest.mark.parametrize("error_code", [6, 28])
-def test_attempt_booking_retries_until_success(offline_bot, mocked_api, frozen_class_day, mock_time, error_code):
+def test_attempt_booking_retries_until_success(offline_bot, mocked_api, mock_time, error_code):
     mocked_api.replace(responses.POST, str(Endpoints.BOOKING), json={"success": False, "error": error_code})
     mocked_api.add(responses.POST, str(Endpoints.BOOKING), json={"success": True})
 
@@ -74,7 +94,7 @@ def test_attempt_booking_retries_until_success(offline_bot, mocked_api, frozen_c
         pytest.param(requests.exceptions.ConnectionError("Connection reset."), id="connection-error"),
     ],
 )
-def test_attempt_booking_retries_after_network_error(offline_bot, mocked_api, frozen_class_day, mock_time, error):
+def test_attempt_booking_retries_after_network_error(offline_bot, mocked_api, mock_time, error):
     mocked_api.replace(responses.POST, str(Endpoints.BOOKING), body=error)
     mocked_api.add(responses.POST, str(Endpoints.BOOKING), json={"success": True})
 
@@ -91,9 +111,7 @@ def test_attempt_booking_retries_after_network_error(offline_bot, mocked_api, fr
         pytest.param({"status": 500}, id="api-error"),
     ],
 )
-def test_attempt_booking_retries_after_other_error(
-    offline_bot, mocked_api, frozen_class_day, mock_time, response_kwargs
-):
+def test_attempt_booking_retries_after_other_error(offline_bot, mocked_api, mock_time, response_kwargs):
     mocked_api.replace(responses.POST, str(Endpoints.BOOKING), **response_kwargs)
     mocked_api.add(responses.POST, str(Endpoints.BOOKING), json={"success": True})
 
@@ -103,14 +121,14 @@ def test_attempt_booking_retries_after_other_error(
     mock_time.sleep.assert_called_once_with(1)
 
 
-def test_attempt_booking_retries_when_slot_not_found(offline_bot, mocked_api, frozen_class_day, mock_time):
-    attempt_booking(offline_bot, activity="Gimnasio", class_day="Friday", class_time="23:00:00", retry_attempts=3)
+def test_attempt_booking_retries_when_slot_not_found(offline_bot, mocked_api, mock_time):
+    attempt_booking(offline_bot, activity="Gimnasio", start=OPEN_SLOT_START.replace(hour=23), retry_attempts=3)
 
     assert _booking_calls(mocked_api) == []
     assert mock_time.sleep.call_count == 2
 
 
-def test_attempt_booking_retries_when_calendar_empty(offline_bot, mocked_api, frozen_class_day, mock_time):
+def test_attempt_booking_retries_when_calendar_empty(offline_bot, mocked_api, mock_time):
     mocked_api.replace(responses.POST, str(Endpoints.SLOTS), json={"data": {"activities_calendar": []}})
 
     _attempt(offline_bot)
@@ -119,7 +137,7 @@ def test_attempt_booking_retries_when_calendar_empty(offline_bot, mocked_api, fr
     assert mock_time.sleep.call_count == 2
 
 
-def test_attempt_booking_stops_when_already_booked(offline_bot, mocked_api, frozen_class_day, mock_time):
+def test_attempt_booking_stops_when_already_booked(offline_bot, mocked_api, mock_time):
     mocked_api.replace(responses.POST, str(Endpoints.BOOKING), json={"success": False, "error": 5})
 
     _attempt(offline_bot)
@@ -128,8 +146,8 @@ def test_attempt_booking_stops_when_already_booked(offline_bot, mocked_api, froz
     mock_time.sleep.assert_not_called()
 
 
-def test_attempt_booking_stops_when_slot_full(offline_bot, mocked_api, frozen_class_day, mock_time):
-    attempt_booking(offline_bot, activity="Gimnasio", class_day="Friday", class_time=FULL_SLOT_TIME, retry_attempts=3)
+def test_attempt_booking_stops_when_slot_full(offline_bot, mocked_api, mock_time):
+    attempt_booking(offline_bot, activity="Gimnasio", start=FULL_SLOT_START, retry_attempts=3)
 
     assert _booking_calls(mocked_api) == []
     mock_time.sleep.assert_not_called()
@@ -145,7 +163,7 @@ def test_attempt_booking_stops_when_slot_full(offline_bot, mocked_api, frozen_cl
 )
 def test_run_service_rejects_invalid_arguments(mocked_api, overrides):
     kwargs = {"booking_delay": 0, "retry_attempts": 1, "retry_delay": 0, **overrides}
-    config = {**VALID_CONFIG, "booking_execution": "now"}
+    config = replace(VALID_CONFIG, execution=None)
 
     with pytest.raises(ValueError, match=next(iter(overrides))):
         run_service(config, **kwargs)
@@ -164,15 +182,37 @@ def test_run_service_rejects_invalid_arguments(mocked_api, overrides):
         pytest.param(datetime(2026, 10, 23, 12, 0), datetime(2026, 10, 25, 7, 30), timedelta(hours=1), id="fall-back"),
     ],
 )
-def test_calculate_next_execution_across_dst_change(now, expected, utc_offset):
-    madrid = ZoneInfo("Europe/Madrid")
-    with patch("pysportbot.service.scheduling.datetime", wraps=datetime) as mock_datetime:
-        mock_datetime.now.return_value = now.replace(tzinfo=madrid)
-        result = calculate_next_execution("Sunday 07:30:00", time_zone="Europe/Madrid")
+def test_next_execution_across_dst_change(now, expected, utc_offset):
+    result = next_execution(WeeklyTime(SUNDAY, time(7, 30)), now.replace(tzinfo=MADRID))
 
     assert result.replace(tzinfo=None) == expected
     assert result.utcoffset() == utc_offset
     assert result == (expected - utc_offset).replace(tzinfo=ZoneInfo("UTC"))
+
+
+UTC = ZoneInfo("UTC")
+
+
+@pytest.mark.parametrize(
+    ("now_utc", "expected_utc"),
+    [
+        # Clocks go back on Sunday 2026-10-25 at 03:00 CEST, so 02:00-03:00 happens twice: 00:00-01:00 and 01:00-02:00 UTC
+        pytest.param(datetime(2026, 10, 25, 0, 15), datetime(2026, 10, 25, 0, 30), id="first-pass-before"),
+        pytest.param(datetime(2026, 10, 25, 0, 45), datetime(2026, 10, 25, 1, 30), id="first-pass-after"),
+        pytest.param(datetime(2026, 10, 25, 1, 15), datetime(2026, 10, 25, 1, 30), id="second-pass-before"),
+        pytest.param(datetime(2026, 10, 25, 1, 45), datetime(2026, 11, 1, 1, 30), id="second-pass-after"),
+        # Clocks go forward on Sunday 2026-03-29 at 02:00 CET, so 02:30 does not exist and runs at 03:30 CEST
+        pytest.param(datetime(2026, 3, 29, 0, 45), datetime(2026, 3, 29, 1, 30), id="nonexistent-time"),
+    ],
+)
+def test_next_execution_at_ambiguous_dst_time_is_ahead(now_utc, expected_utc):
+    now = now_utc.replace(tzinfo=UTC).astimezone(MADRID)
+
+    result = next_execution(WeeklyTime(SUNDAY, time(2, 30)), now)
+
+    # Aware datetimes in a repeated or skipped hour never equal those in another zone (PEP 495), so compare instants
+    assert result.timestamp() == expected_utc.replace(tzinfo=UTC).timestamp()
+    assert result.timestamp() > now.timestamp()
 
 
 @pytest.mark.parametrize(
@@ -184,58 +224,81 @@ def test_calculate_next_execution_across_dst_change(now, expected, utc_offset):
     ],
 )
 def test_schedule_bookings_waits_real_time_across_dst_change(mock_time, now, hours_until_execution):
-    madrid = ZoneInfo("Europe/Madrid")
-    start = now.replace(tzinfo=madrid)
+    start = now.replace(tzinfo=MADRID)
     seconds_until_execution = hours_until_execution * 3600
     # The clock when the service wakes up to re-authenticate, 60 s before execution
-    reauth_now = datetime.fromtimestamp(start.timestamp() + seconds_until_execution - 60, madrid)
-    config = {**VALID_CONFIG, "booking_execution": "Sunday 07:30:00"}
+    reauth_now = datetime.fromtimestamp(start.timestamp() + seconds_until_execution - 60, MADRID)
+    config = replace(VALID_CONFIG, execution=WeeklyTime(SUNDAY, time(7, 30)))
 
     with (
-        patch("pysportbot.service.scheduling.datetime", wraps=datetime) as scheduling_datetime,
         patch("pysportbot.service.booking.datetime", wraps=datetime) as booking_datetime,
         patch("pysportbot.service.booking.attempt_booking"),
     ):
-        scheduling_datetime.now.return_value = start
         booking_datetime.now.side_effect = [start, reauth_now]
         schedule_bookings(MagicMock(), config, 0, 1, 0, "Europe/Madrid", 1)
 
     assert mock_time.sleep.call_args_list == [call(seconds_until_execution - 60), call(60)]
 
 
-def test_validate_config_accepts_valid_config():
-    validate_config(VALID_CONFIG)
+def test_run_service_books_now_with_env_credentials(mocked_api, mock_time, frozen_now, config_path):
+    config = load_config(config_path, env=CREDENTIALS_ENV)
+
+    run_service(config, booking_delay=0, retry_attempts=1, retry_delay=0)
+
+    assert len(_booking_calls(mocked_api)) == 1
+    mock_time.sleep.assert_not_called()
 
 
-def test_validate_config_normalizes_day_names():
-    config = {
-        **VALID_CONFIG,
-        "booking_execution": "FRIDAY 07:30:00",
-        "classes": [{"activity": "Gimnasio", "class_day": " monday ", "class_time": OPEN_SLOT_TIME}],
-    }
+def test_cli_books_now_with_env_credentials(mocked_api, mock_time, frozen_now, config_path, monkeypatch):
+    for name, value in CREDENTIALS_ENV.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(sys, "argv", ["pysportbot.service", "--config", str(config_path), "--max-threads", "-1"])
 
-    validate_config(config)
+    main()
 
-
-@pytest.mark.parametrize("day", ["Funday", "Mon", "Lunes"])
-def test_validate_config_rejects_invalid_execution_day(day):
-    config = {**VALID_CONFIG, "booking_execution": f"{day} 07:30:00"}
-
-    with pytest.raises(ConfigError, match=f"Invalid day '{day}'"):
-        validate_config(config)
+    assert len(_booking_calls(mocked_api)) == 1
 
 
-@pytest.mark.parametrize("day", ["Funday", "Mon", "", 1])
-def test_validate_config_rejects_invalid_class_day(day):
-    config = {**VALID_CONFIG, "classes": [{**VALID_CONFIG["classes"][0], "class_day": day}]}
+def test_cli_reports_config_error_without_traceback(mocked_api, tmp_path, monkeypatch, capsys):
+    for name in CREDENTIALS_ENV:
+        monkeypatch.delenv(name, raising=False)
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({**CONFIG_WITHOUT_CREDENTIALS, "center": "test-centre"}))
+    monkeypatch.setattr(sys, "argv", ["pysportbot.service", "--config", str(path)])
 
-    with pytest.raises(ConfigError, match=f"Invalid day '{day}'"):
-        validate_config(config)
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    assert exc_info.value.code == 2
+    err = capsys.readouterr().err
+    assert "unknown key 'center', did you mean 'centre'?" in err
+    assert "SPORTBOT_EMAIL" in err
+    assert "Traceback" not in err
+    assert len(mocked_api.calls) == 0
 
 
-@pytest.mark.parametrize("class_time", ["18:00", "25:00:00", "6pm", "", 1800])
-def test_validate_config_rejects_invalid_class_time(class_time):
-    config = {**VALID_CONFIG, "classes": [{**VALID_CONFIG["classes"][0], "class_time": class_time}]}
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("--max-threads", "0"),
+        ("--max-threads", "-2"),
+        ("--max-threads", "two"),
+        ("--retry-attempts", "0"),
+        ("--retry-delay", "-1"),
+        ("--booking-delay", "-1"),
+        ("--booking-delay", "1.5"),
+        ("--time-zone", "Mars/Base"),
+        ("--time-zone", "../etc"),
+        ("--log-level", "LOUD"),
+    ],
+)
+def test_cli_rejects_invalid_arguments(option, value, config_path, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["pysportbot.service", "--config", str(config_path), option, value])
 
-    with pytest.raises(ConfigError, match=f"Invalid class_time '{class_time}'"):
-        validate_config(config)
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    assert exc_info.value.code == 2
+    err = capsys.readouterr().err
+    assert f"argument {option}:" in err
+    assert "Traceback" not in err

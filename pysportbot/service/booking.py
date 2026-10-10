@@ -2,7 +2,6 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from typing import Any
 from zoneinfo import ZoneInfo
 
 import requests
@@ -10,7 +9,8 @@ import requests
 from pysportbot import SportBot
 from pysportbot.exceptions import SlotAlreadyBookedError, SlotFullError, SportBotError
 
-from .scheduling import calculate_class_day, calculate_next_execution
+from .config import WEEKDAY_NAMES, ServiceConfig
+from .scheduling import next_class_date, next_execution
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +18,9 @@ logger = logging.getLogger(__name__)
 def attempt_booking(
     bot: SportBot,
     activity: str,
-    class_day: str,
-    class_time: str,
+    start: datetime,
     retry_attempts: int = 1,
     retry_delay: int = 0,
-    time_zone: str = "Europe/Madrid",
 ) -> None:
     """
     Attempt to book a slot for the given class.
@@ -30,15 +28,10 @@ def attempt_booking(
     Args:
         bot (SportBot): The SportBot instance.
         activity (str): Activity name.
-        class_day (str): Day of the class.
-        class_time (str): Time of the class.
+        start (datetime): Timezone-aware start time of the class.
         retry_attempts (int): Number of retry attempts.
         retry_delay (int): Delay between retries.
-        time_zone (str): Time zone for execution.
     """
-    booking_date = calculate_class_day(class_day, time_zone).date()
-    start = datetime.combine(booking_date, datetime.strptime(class_time, "%H:%M:%S").time(), tzinfo=ZoneInfo(time_zone))
-
     for attempt_num in range(1, retry_attempts + 1):
         try:
             bot.book(activity=activity, start=start)
@@ -60,12 +53,18 @@ def attempt_booking(
 
     # If all attempts fail, log an error
     # Do not raise an exception to allow other bookings to proceed
-    logger.error(f"Failed to book '{activity}' at {class_time} on {booking_date} after {retry_attempts} attempts.")
+    logger.error(f"Failed to book {_describe(activity, start)} after {retry_attempts} attempts.")
+
+
+def _describe(activity: str, start: datetime) -> str:
+    """Describe a class as e.g. "'Yoga' on Monday 2026-01-12 at 18:00"."""
+    time_format = "%H:%M:%S" if start.second else "%H:%M"
+    return f"'{activity}' on {WEEKDAY_NAMES[start.weekday()]} {start:%Y-%m-%d} at {start.strftime(time_format)}"
 
 
 def schedule_bookings(
     bot: SportBot,
-    config: dict[str, Any],
+    config: ServiceConfig,
     booking_delay: int,
     retry_attempts: int,
     retry_delay: int,
@@ -77,26 +76,26 @@ def schedule_bookings(
 
     Args:
         bot (SportBot): The SportBot instance.
-        classes (list): List of class configurations.
-        booking_execution (str): Global execution time for all bookings.
+        config (ServiceConfig): The service configuration.
         booking_delay (int): Delay before each booking attempt.
         retry_attempts (int): Number of retry attempts.
         retry_delay (int): Delay between retries.
         time_zone (str): Timezone for booking.
         max_threads (int): Maximum number of threads to use.
     """
-    # Log planned bookings
-    for cls in config["classes"]:
-        logger.info(f"Scheduled to book '{cls['activity']}' next {cls['class_day']} at {cls['class_time']}.")
-
-    # Booking execution day and time
-    booking_execution = config["booking_execution"]
+    tz = ZoneInfo(time_zone)
+    now = datetime.now(tz)
 
     # Exact time when booking will be executed (modulo global booking delay)
-    execution_time = calculate_next_execution(booking_execution, time_zone)
+    execution_time = next_execution(config.execution, now)
 
-    # Get the time now
-    now = datetime.now(ZoneInfo(time_zone))
+    # Classes are booked for the week following the execution
+    bookings = [
+        (cls.activity, datetime.combine(next_class_date(cls.weekday, execution_time), cls.time, tzinfo=tz))
+        for cls in config.classes
+    ]
+    for activity, start in bookings:
+        logger.info(f"Scheduled to book {_describe(activity, start)}.")
 
     # Calculate the seconds until execution. Subtracting datetimes that share a ZoneInfo gives the wall-clock
     # difference, which is off by an hour across a DST change, so compare the absolute timestamps instead
@@ -123,7 +122,7 @@ def schedule_bookings(
             logger.warning(f"Re-authentication failed before booking execution with {e}.")
 
         # Wait the remaining time until execution
-        now = datetime.now(ZoneInfo(time_zone))
+        now = datetime.now(tz)
         remaining_time = execution_time.timestamp() - now.timestamp()
         if remaining_time > 0:
             logger.info(f"Waiting {remaining_time:.2f} seconds until booking execution.")
@@ -136,24 +135,14 @@ def schedule_bookings(
 
     # Submit bookings in parallel
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
-        future_to_class = {
-            executor.submit(
-                attempt_booking,
-                bot,
-                cls["activity"],
-                cls["class_day"],
-                cls["class_time"],
-                retry_attempts,
-                retry_delay,
-                time_zone,
-            ): cls
-            for cls in config["classes"]
+        future_to_booking = {
+            executor.submit(attempt_booking, bot, activity, start, retry_attempts, retry_delay): (activity, start)
+            for activity, start in bookings
         }
 
-        for future in as_completed(future_to_class):
-            cls = future_to_class[future]
-            activity, class_time = cls["activity"], cls["class_time"]
+        for future in as_completed(future_to_booking):
+            activity, start = future_to_booking[future]
             try:
                 future.result()
             except Exception:
-                logger.exception(f"Booking for '{activity}' at {class_time} failed.")
+                logger.exception(f"Booking {_describe(activity, start)} failed.")

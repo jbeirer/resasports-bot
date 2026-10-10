@@ -1,165 +1,23 @@
-import json
 import unittest
-from datetime import datetime
-from unittest.mock import MagicMock, call, mock_open, patch
+from datetime import date, datetime, time
+from unittest.mock import MagicMock, call, patch
 from zoneinfo import ZoneInfo
 
 from pysportbot import Activity
 from pysportbot.exceptions import ConfigError, SlotAlreadyBookedError, SlotNotFoundError
 from pysportbot.service.booking import attempt_booking, schedule_bookings
-
-# Adjust these imports to match your actual project structure:
-from pysportbot.service.config_loader import load_config
-from pysportbot.service.config_validator import DAY_MAP, validate_activities, validate_config
-from pysportbot.service.scheduling import calculate_class_day, calculate_next_execution
+from pysportbot.service.config import ClassSpec, ServiceConfig, WeeklyTime
+from pysportbot.service.scheduling import next_class_date, next_execution
 from pysportbot.service.service import run_service
-from pysportbot.service.threading import get_n_threads
+
+TZ = ZoneInfo("Europe/Madrid")
+MONDAY, TUESDAY, WEDNESDAY, FRIDAY = 0, 1, 2, 4
 
 
-class TestConfigLoader(unittest.TestCase):
-    """
-    Tests for config_loader.py module.
-    """
-
-    def test_load_config_valid_file(self):
-        """
-        Test load_config with a valid JSON file.
-        """
-        fake_json = json.dumps(
-            {
-                "email": "test@example.com",
-                "password": "secret",
-                "centre": "my-gim",
-                "classes": [],
-                "booking_execution": "now",
-            }
-        )
-        with patch("builtins.open", mock_open(read_data=fake_json)), patch("os.path.exists", return_value=True):
-            config = load_config("fake_config_path.json")
-            self.assertIn("email", config)
-            self.assertEqual(config["email"], "test@example.com")
-
-    def test_load_config_file_not_found(self):
-        """
-        Test load_config if the file does not exist.
-        """
-        with self.assertRaises(FileNotFoundError):
-            load_config("non_existent_config.json")
-
-    def test_load_config_invalid_json(self):
-        """
-        Test load_config with an invalid JSON structure.
-        """
-        invalid_data = "{invalid_json: True unquoted_value}"
-        # Combine into one 'with' to fix SIM117
-        with patch("builtins.open", mock_open(read_data=invalid_data)), self.assertRaises(json.JSONDecodeError):
-            load_config("fake_config_path.json")
-
-
-class TestConfigValidator(unittest.TestCase):
-    """
-    Tests for config_validator.py module.
-    """
-
-    def test_validate_config_missing_required_key(self):
-        """
-        Test that validate_config raises an error if required keys are missing.
-        """
-        config_missing_email = {
-            # 'email': 'someone@example.com',  # omitted on purpose
-            "password": "secret",
-            "centre": "my-gim",
-            "classes": [],
-            "booking_execution": "Monday 07:30:00",
-        }
-        with self.assertRaises(ConfigError) as ctx:
-            validate_config(config_missing_email)
-        self.assertIn("Missing required key in config: email", str(ctx.exception))
-
-    def test_validate_config_invalid_class_definition(self):
-        """
-        Test that validate_config raises an error if 'classes' are missing required keys.
-        """
-        config = {
-            "email": "someone@example.com",
-            "password": "secret",
-            "centre": "my-gim",
-            "classes": [
-                {
-                    # missing 'activity' and 'class_time'
-                    "class_day": "Monday"
-                }
-            ],
-            "booking_execution": "Monday 07:30:00",
-        }
-        with self.assertRaises(ConfigError) as ctx:
-            validate_config(config)
-
-        self.assertIn("Each class must include", str(ctx.exception))
-
-    def test_validate_config_booking_execution_now(self):
-        """
-        Test that validate_config allows 'booking_execution' to be 'now' without error.
-        """
-        config = {
-            "email": "someone@example.com",
-            "password": "secret",
-            "centre": "my-gim",
-            "classes": [
-                {
-                    "activity": "Yoga",
-                    "class_day": "Monday",
-                    "class_time": "10:00:00",
-                }
-            ],
-            "booking_execution": "now",
-        }
-        # Should not raise
-        validate_config(config)
-
-    def test_validate_config_invalid_booking_execution_format(self):
-        """
-        Test that validate_config raises an error if the booking_execution format is invalid.
-        """
-        config = {
-            "email": "someone@example.com",
-            "password": "secret",
-            "centre": "my-gim",
-            "classes": [],
-            "booking_execution": "Monday07:30:00",  # missing space
-        }
-        with self.assertRaises(ConfigError) as ctx:
-            validate_config(config)
-        self.assertIn("Invalid booking_execution format", str(ctx.exception))
-
-    @patch("pysportbot.service.config_validator.SportBot")
-    def test_validate_activities_unknown_activity(self, mock_sportbot_class):
-        """
-        Test that if the config specifies an activity not present in SportBot activities,
-        validate_activities raises an error.
-        """
-        mock_bot_instance = mock_sportbot_class.return_value
-        mock_bot_instance.activities.return_value = [Activity(id=101, name="Yoga", category_id=10)]
-
-        config = {
-            "email": "test@example.com",
-            "password": "password",
-            "centre": "my-gim",
-            "classes": [
-                {
-                    "activity": "CrossFit",
-                    "class_day": "Monday",
-                    "class_time": "18:00:00",
-                }
-            ],
-            "booking_execution": "now",
-        }
-
-        with self.assertRaises(ConfigError) as ctx:
-            validate_activities(mock_bot_instance, config)
-
-        self.assertIn("'CrossFit'", str(ctx.exception))
-        self.assertIn("Yoga", str(ctx.exception))
+def make_config(classes, execution=None):
+    return ServiceConfig(
+        email="test@example.com", password="pass", centre="my-gim", execution=execution, classes=tuple(classes)
+    )
 
 
 class TestScheduling(unittest.TestCase):
@@ -167,119 +25,69 @@ class TestScheduling(unittest.TestCase):
     Tests for scheduling.py module.
     """
 
-    @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
-    def test_calculate_next_execution_future_day(self, mock_datetime):
+    def test_next_execution_future_day(self):
         """
         If today is Wednesday 2024-01-10, then 'Friday 07:30:00' should be 2 days ahead (2024-01-12).
         """
-        tz = ZoneInfo("Europe/Madrid")
-        mock_now = datetime(2024, 1, 10, 12, 0, 0, tzinfo=tz)
-        mock_datetime.now.return_value = mock_now
+        now = datetime(2024, 1, 10, 12, 0, 0, tzinfo=TZ)
 
-        result = calculate_next_execution("Friday 07:30:00", time_zone="Europe/Madrid")
-        expected = datetime(2024, 1, 12, 7, 30, 0, tzinfo=tz)
-        self.assertEqual(result, expected)
+        result = next_execution(WeeklyTime(FRIDAY, time(7, 30)), now)
+        self.assertEqual(result, datetime(2024, 1, 12, 7, 30, 0, tzinfo=TZ))
 
-    @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
-    def test_calculate_next_execution_same_day_future_time(self, mock_datetime):
+    def test_next_execution_same_day_future_time(self):
         """
         If today is Monday 2024-01-08 at 10:00 and booking_execution is Monday 20:00,
         the next execution is that same day 20:00.
         """
-        tz = ZoneInfo("Europe/Madrid")
-        mock_now = datetime(2024, 1, 8, 10, 0, 0, tzinfo=tz)  # Monday
-        mock_datetime.now.return_value = mock_now
+        now = datetime(2024, 1, 8, 10, 0, 0, tzinfo=TZ)
 
-        result = calculate_next_execution("Monday 20:00:00", "Europe/Madrid")
-        expected = datetime(2024, 1, 8, 20, 0, 0, tzinfo=tz)
-        self.assertEqual(result, expected)
+        result = next_execution(WeeklyTime(MONDAY, time(20, 0)), now)
+        self.assertEqual(result, datetime(2024, 1, 8, 20, 0, 0, tzinfo=TZ))
 
-    @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
-    def test_calculate_next_execution_same_day_past_time(self, mock_datetime):
+    def test_next_execution_same_day_past_time(self):
         """
         If today is Monday 2024-01-08 at 22:00 and booking_execution is Monday 20:00,
         the next execution is next Monday (7 days later).
         """
-        tz = ZoneInfo("Europe/Madrid")
-        mock_now = datetime(2024, 1, 8, 22, 0, 0, tzinfo=tz)
-        mock_datetime.now.return_value = mock_now
+        now = datetime(2024, 1, 8, 22, 0, 0, tzinfo=TZ)
 
-        result = calculate_next_execution("Monday 20:00:00", "Europe/Madrid")
-        expected = datetime(2024, 1, 15, 20, 0, 0, tzinfo=tz)
-        self.assertEqual(result, expected)
+        result = next_execution(WeeklyTime(MONDAY, time(20, 0)), now)
+        self.assertEqual(result, datetime(2024, 1, 15, 20, 0, 0, tzinfo=TZ))
 
-    @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
-    def test_calculate_next_execution_now(self, mock_datetime):
+    def test_next_execution_now(self):
         """
         If booking_execution is 'now', we simply return the current time.
         """
-        tz = ZoneInfo("Europe/Madrid")
-        mock_now = datetime(2024, 1, 10, 22, 0, 0, tzinfo=tz)
-        mock_datetime.now.return_value = mock_now
+        now = datetime(2024, 1, 10, 22, 0, 0, tzinfo=TZ)
 
-        result = calculate_next_execution("now", "Europe/Madrid")
-        self.assertEqual(result, mock_now)
+        self.assertEqual(next_execution(None, now), now)
 
-    @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
-    def test_calculate_class_day_future_day(self, mock_datetime):
+    def test_next_class_date_future_day(self):
         """
         If today is Wednesday 2024-01-10, the next Monday is 2024-01-15 (5 days later).
         """
-        tz = ZoneInfo("Europe/Madrid")
-        mock_now = datetime(2024, 1, 10, 12, 0, 0, tzinfo=tz)
-        mock_datetime.now.return_value = mock_now
+        now = datetime(2024, 1, 10, 12, 0, 0, tzinfo=TZ)
 
-        result = calculate_class_day("Monday", "Europe/Madrid")
-        expected = datetime(2024, 1, 15, 12, 0, 0, tzinfo=tz)
-        self.assertEqual(result.date(), expected.date())
+        self.assertEqual(next_class_date(MONDAY, now), date(2024, 1, 15))
 
-    @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
-    def test_calculate_class_day_always_next_week(self, mock_datetime):
+    def test_next_class_date_always_next_week(self):
         """
         If today is Friday at 07:30 and class_day is Friday at 18:00,
         ensure the booking is for NEXT Friday, not today.
         """
-        tz = ZoneInfo("Europe/Madrid")
-        # Simulated Friday, Jan 5, 2024, 07:30
-        mock_now = datetime(2024, 1, 5, 7, 30, 0, tzinfo=tz)
-        mock_datetime.now.return_value = mock_now
-
-        result = calculate_class_day("Friday", "Europe/Madrid")
+        # Friday, Jan 5, 2024, 07:30
+        now = datetime(2024, 1, 5, 7, 30, 0, tzinfo=TZ)
 
         # Expected: The NEXT Friday (2024-01-12), NOT today (2024-01-05)
-        expected = datetime(2024, 1, 12, 7, 30, 0, tzinfo=tz)  # Next Friday
+        self.assertEqual(next_class_date(FRIDAY, now), date(2024, 1, 12))
 
-        self.assertEqual(result.date(), expected.date())
-
-    @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
-    def test_calculate_class_day_midweek_execution(self, mock_datetime):
+    def test_next_class_date_midweek_execution(self):
         """
         If today is Wednesday and class_day is next Tuesday, ensure it selects the next week's Tuesday.
         """
-        tz = ZoneInfo("Europe/Madrid")
-        mock_now = datetime(2024, 1, 10, 12, 0, 0, tzinfo=tz)  # Wednesday
-        mock_datetime.now.return_value = mock_now
+        now = datetime(2024, 1, 10, 12, 0, 0, tzinfo=TZ)  # Wednesday
 
-        result = calculate_class_day("Tuesday", "Europe/Madrid")
-
-        # Expected: Next week's Tuesday (2024-01-16)
-        expected = datetime(2024, 1, 16, 12, 0, 0, tzinfo=tz)
-        self.assertEqual(result.date(), expected.date())
-
-    def test_day_map_contains_all_days(self):
-        """
-        Test that DAY_MAP includes all 7 days with correct indexes.
-        """
-        expected = {
-            "monday": 0,
-            "tuesday": 1,
-            "wednesday": 2,
-            "thursday": 3,
-            "friday": 4,
-            "saturday": 5,
-            "sunday": 6,
-        }
-        self.assertEqual(DAY_MAP, expected)
+        self.assertEqual(next_class_date(TUESDAY, now), date(2024, 1, 16))
 
 
 class TestBooking(unittest.TestCase):
@@ -295,9 +103,8 @@ class TestBooking(unittest.TestCase):
         Test schedule_bookings re-authenticates if needed when execution is scheduled for a future time.
         """
         # Mock current time to simulate a future execution
-        tz = ZoneInfo("Europe/Madrid")
-        mock_now = datetime(2024, 1, 8, 9, 0, 0, tzinfo=tz)  # Current time
-        mock_execution_time = datetime(2024, 1, 8, 10, 0, 0, tzinfo=tz)  # 1 hour later
+        mock_now = datetime(2024, 1, 8, 9, 0, 0, tzinfo=TZ)  # Monday, current time
+        mock_execution_time = datetime(2024, 1, 8, 10, 0, 0, tzinfo=TZ)  # 1 hour later
 
         # Mock datetime.now() to return different values for each call
         mock_datetime.now.side_effect = [
@@ -305,28 +112,19 @@ class TestBooking(unittest.TestCase):
             mock_execution_time,  # Second call - after re-authentication, time has "advanced"
         ]
 
-        # Mock the calculate_next_execution function to return the future execution time
-        with patch("pysportbot.service.booking.calculate_next_execution", return_value=mock_execution_time):
-            mock_bot = MagicMock()
+        mock_bot = MagicMock()
+        config = make_config([ClassSpec("Yoga", MONDAY, time(9, 0))], execution=WeeklyTime(MONDAY, time(10, 0)))
 
-            config = {
-                "email": "test@example.com",
-                "password": "pass",
-                "centre": "my-gim",
-                "booking_execution": "2024-01-08 10:00:00",
-                "classes": [{"activity": "Yoga", "class_day": "Monday", "class_time": "09:00:00"}],
-            }
-
-            # Run schedule_bookings
-            schedule_bookings(
-                bot=mock_bot,
-                config=config,
-                booking_delay=10,
-                retry_attempts=2,
-                retry_delay=1,
-                time_zone="Europe/Madrid",
-                max_threads=1,
-            )
+        # Run schedule_bookings
+        schedule_bookings(
+            bot=mock_bot,
+            config=config,
+            booking_delay=10,
+            retry_attempts=2,
+            retry_delay=1,
+            time_zone="Europe/Madrid",
+            max_threads=1,
+        )
 
         # Assert the correct sleep calls
         time_until_execution = (mock_execution_time - mock_now).total_seconds()
@@ -344,6 +142,10 @@ class TestBooking(unittest.TestCase):
         # Assert the bot re-authenticated if needed, exactly once
         mock_bot.ensure_logged_in.assert_called_once_with()
 
+        # The class is on the Monday after the execution, and the plan is logged with its date
+        mock_bot.book.assert_called_once_with(activity="Yoga", start=datetime(2024, 1, 15, 9, 0, tzinfo=TZ))
+        mock_logger.info.assert_any_call("Scheduled to book 'Yoga' on Monday 2024-01-15 at 09:00.")
+
     @patch("pysportbot.service.booking.datetime", wraps=datetime)
     @patch("pysportbot.service.booking.time")
     @patch("pysportbot.service.booking.logger")
@@ -352,9 +154,8 @@ class TestBooking(unittest.TestCase):
         Test schedule_bookings warns and continues when re-authentication throws an exception.
         """
         # Mock current time to simulate a future execution
-        tz = ZoneInfo("Europe/Madrid")
-        mock_now = datetime(2024, 1, 8, 9, 0, 0, tzinfo=tz)  # Current time
-        mock_execution_time = datetime(2024, 1, 8, 10, 0, 0, tzinfo=tz)  # 1 hour later
+        mock_now = datetime(2024, 1, 8, 9, 0, 0, tzinfo=TZ)  # Current time
+        mock_execution_time = datetime(2024, 1, 8, 10, 0, 0, tzinfo=TZ)  # 1 hour later
 
         # Mock datetime.now() to return different values for each call
         mock_datetime.now.side_effect = [
@@ -362,31 +163,23 @@ class TestBooking(unittest.TestCase):
             mock_execution_time,  # Second call - after exception, time has "advanced"
         ]
 
-        # Mock the calculate_next_execution function to return the future execution time
-        with patch("pysportbot.service.booking.calculate_next_execution", return_value=mock_execution_time):
-            mock_bot = MagicMock()
+        mock_bot = MagicMock()
 
-            # Mock the re-authentication to raise an exception
-            mock_bot.ensure_logged_in.side_effect = Exception("Network error")
+        # Mock the re-authentication to raise an exception
+        mock_bot.ensure_logged_in.side_effect = Exception("Network error")
 
-            config = {
-                "email": "test@example.com",
-                "password": "pass",
-                "centre": "my-gim",
-                "booking_execution": "2024-01-08 10:00:00",
-                "classes": [{"activity": "Yoga", "class_day": "Monday", "class_time": "09:00:00"}],
-            }
+        config = make_config([ClassSpec("Yoga", MONDAY, time(9, 0))], execution=WeeklyTime(MONDAY, time(10, 0)))
 
-            # Run schedule_bookings
-            schedule_bookings(
-                bot=mock_bot,
-                config=config,
-                booking_delay=10,
-                retry_attempts=2,
-                retry_delay=1,
-                time_zone="Europe/Madrid",
-                max_threads=1,
-            )
+        # Run schedule_bookings
+        schedule_bookings(
+            bot=mock_bot,
+            config=config,
+            booking_delay=10,
+            retry_attempts=2,
+            retry_delay=1,
+            time_zone="Europe/Madrid",
+            max_threads=1,
+        )
 
         # Assert the correct sleep calls
         time_until_execution = (mock_execution_time - mock_now).total_seconds()
@@ -408,55 +201,35 @@ class TestBooking(unittest.TestCase):
         mock_logger.warning.assert_called_with("Re-authentication failed before booking execution with Network error.")
 
     @patch("pysportbot.service.booking.logger")
-    @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
-    def test_attempt_booking_success(self, mock_datetime_sched, mock_logger):
+    def test_attempt_booking_success(self, mock_logger):
         """
         If matching_slots is found, attempt_booking should succeed on the first try.
         """
-        # Force the current date to 2024-01-10 (which is a Wednesday)
-        tz = ZoneInfo("Europe/Madrid")
-        mock_now = datetime(2024, 1, 10, 9, 0, 0, tzinfo=tz)
-        mock_datetime_sched.now.return_value = mock_now
-
         mock_bot = MagicMock()
+        start = datetime(2024, 1, 17, 18, 0, tzinfo=TZ)
 
-        attempt_booking(
-            bot=mock_bot,
-            activity="Yoga",
-            class_day="Wednesday",  # Today is Wednesday, so this maps to next week's 2024-01-17
-            class_time="18:00:00",
-            retry_attempts=3,
-            retry_delay=1,
-            time_zone="Europe/Madrid",
-        )
+        attempt_booking(bot=mock_bot, activity="Yoga", start=start, retry_attempts=3, retry_delay=1)
+
         # The bot is asked for the aware start time, exactly once
-        mock_bot.book.assert_called_once_with(activity="Yoga", start=datetime(2024, 1, 17, 18, 0, tzinfo=tz))
+        mock_bot.book.assert_called_once_with(activity="Yoga", start=start)
 
     @patch("pysportbot.service.booking.logger")
-    @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
-    def test_attempt_booking_no_matching_slots(self, mock_datetime_sched, mock_logger):
+    def test_attempt_booking_no_matching_slots(self, mock_logger):
         """
         If no matching slot is found, attempt_booking should call the bot.book()
         method, which will raise an exception internally, and log warnings on each attempt.
         """
-        # Make the current date 2024-01-10 (Wednesday)
-        tz = ZoneInfo("Europe/Madrid")
-        mock_now = datetime(2024, 1, 10, 12, 0, 0, tzinfo=tz)
-        mock_datetime_sched.now.return_value = mock_now
-
         mock_bot = MagicMock()
         # Mock the bot.book method to simulate no matching slot
-        error = SlotNotFoundError("Yoga", "2024-01-10 18:00:00")
+        error = SlotNotFoundError("Yoga", "2024-01-17 18:00:00")
         mock_bot.book.side_effect = error
 
         attempt_booking(
             bot=mock_bot,
             activity="Yoga",
-            class_day="Wednesday",
-            class_time="18:00:00",
+            start=datetime(2024, 1, 17, 18, 0, tzinfo=TZ),
             retry_attempts=2,
             retry_delay=0,
-            time_zone="Europe/Madrid",
         )
 
         # Check that book() was called twice (retry_attempts = 2)
@@ -465,18 +238,15 @@ class TestBooking(unittest.TestCase):
         # On the final attempt, ensure the correct error message was logged
         last_warning = mock_logger.warning.call_args_list[-1][0][0]
         self.assertIn(str(error), last_warning)
+        mock_logger.error.assert_called_once_with(
+            "Failed to book 'Yoga' on Wednesday 2024-01-17 at 18:00 after 2 attempts."
+        )
 
     @patch("pysportbot.service.booking.logger")
-    @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
-    def test_attempt_booking_slot_already_booked(self, mock_datetime_sched, mock_logger):
+    def test_attempt_booking_slot_already_booked(self, mock_logger):
         """
         If the slot is already booked, abort further retries.
         """
-        # Current date: 2024-01-10 (Wednesday)
-        tz = ZoneInfo("Europe/Madrid")
-        mock_now = datetime(2024, 1, 10, 10, 0, 0, tzinfo=tz)
-        mock_datetime_sched.now.return_value = mock_now
-
         mock_bot = MagicMock()
         # First attempt raises 'slot already booked', so we skip subsequent attempts
         mock_bot.book.side_effect = [SlotAlreadyBookedError("123", 5)]
@@ -484,11 +254,9 @@ class TestBooking(unittest.TestCase):
         attempt_booking(
             bot=mock_bot,
             activity="Yoga",
-            class_day="Wednesday",
-            class_time="18:00:00",
+            start=datetime(2024, 1, 17, 18, 0, tzinfo=TZ),
             retry_attempts=3,
             retry_delay=1,
-            time_zone="Europe/Madrid",
         )
         mock_bot.book.assert_called_once()  # Should only be called the first time
 
@@ -512,16 +280,12 @@ class TestBooking(unittest.TestCase):
         # 4. Everything else (bot, classes, etc.)
         mock_bot = MagicMock()
 
-        config = {
-            "email": "my@my.com",
-            "password": "pass",
-            "centre": "my-gim",
-            "booking_execution": "now",
-            "classes": [
-                {"activity": "Yoga", "class_day": "Monday", "class_time": "09:00:00"},
-                {"activity": "Boxing", "class_day": "Tuesday", "class_time": "10:00:00"},
-            ],
-        }
+        config = make_config(
+            [
+                ClassSpec("Yoga", MONDAY, time(9, 0)),
+                ClassSpec("Boxing", TUESDAY, time(10, 0)),
+            ]
+        )
 
         # Call function under test
         schedule_bookings(
@@ -539,47 +303,10 @@ class TestBooking(unittest.TestCase):
         mock_executor.assert_called_once_with(max_workers=2)
 
         # ThreadPoolExecutor.submit should have been called for each class:
-        self.assertEqual(mock_executor_instance.submit.call_count, len(config["classes"]))
+        self.assertEqual(mock_executor_instance.submit.call_count, len(config.classes))
         # as_completed was called with the dictionary of futures
         # but we only need to confirm it wasn't stuck
         self.assertTrue(mock_as_completed.called)
-
-
-class TestThreading(unittest.TestCase):
-    """
-    Tests for threading.py module.
-    """
-
-    def test_get_n_threads_zero_requested_raises(self):
-        """
-        If 0 threads requested, raise ValueError.
-        """
-        with self.assertRaises(ValueError):
-            get_n_threads(0, 2)
-
-    @patch("os.cpu_count", return_value=4)
-    def test_get_n_threads_user_request_greater_than_cpu(self, mock_cpu_count):
-        """
-        If user requests more threads than CPU, limit to the CPU count (and booking count).
-        """
-        result = get_n_threads(10, 3)  # user wants 10, CPU=4, bookings=3 => min=3
-        self.assertEqual(result, 3)
-
-    @patch("os.cpu_count", return_value=4)
-    def test_get_n_threads_no_bookings(self, mock_cpu_count):
-        """
-        If there are no bookings, returns 0 threads.
-        """
-        result = get_n_threads(-1, 0)  # no bookings
-        self.assertEqual(result, 0)
-
-    @patch("os.cpu_count", return_value=8)
-    def test_get_n_threads_auto_detect_with_fewer_bookings(self, mock_cpu_count):
-        """
-        If max_user_threads == -1, min(available_threads, requested_bookings).
-        """
-        result = get_n_threads(-1, 3)  # CPU=8, bookings=3 => min=3
-        self.assertEqual(result, 3)
 
 
 class TestServiceRun(unittest.TestCase):
@@ -587,64 +314,72 @@ class TestServiceRun(unittest.TestCase):
     Tests for the service.py 'run_service' function.
     """
 
-    @patch("pysportbot.service.service.validate_config")
     @patch("pysportbot.service.service.validate_activities")
-    @patch("pysportbot.service.service.get_n_threads", return_value=2)
     @patch("pysportbot.service.service.schedule_bookings")
     @patch("pysportbot.service.service.SportBot")
-    def test_run_service_success(
-        self,
-        mock_sportbot_class,
-        mock_schedule_bookings,
-        mock_get_n_threads,
-        mock_validate_activities,
-        mock_validate_config,
-    ):
+    def test_run_service_success(self, mock_sportbot_class, mock_schedule_bookings, mock_validate_activities):
         """
         If config is valid, run_service should do the full workflow:
-        validate config, login, validate activities, schedule bookings, etc.
+        login, validate activities, schedule bookings, etc.
         """
-        mock_config = {
-            "email": "test@example.com",
-            "password": "pass",
-            "centre": "my-gim",
-            "classes": [{"activity": "Yoga", "class_day": "Monday", "class_time": "10:00:00"}],
-            "booking_execution": "now",
-        }
+        config = make_config([ClassSpec("Yoga", MONDAY, time(10, 0))])
 
         run_service(
-            config=mock_config,
+            config,
             booking_delay=10,
             retry_attempts=2,
             retry_delay=1,
             time_zone="Europe/Madrid",
             log_level="DEBUG",
-            max_threads=-1,
         )
 
-        mock_validate_config.assert_called_once_with(mock_config)
         mock_sportbot_class.assert_called_once_with(log_level="DEBUG", time_zone="Europe/Madrid")
 
         bot_instance = mock_sportbot_class.return_value
         bot_instance.login.assert_called_once_with("test@example.com", "pass", "my-gim")
-        mock_validate_activities.assert_called_once_with(bot_instance, mock_config)
-        # there's only 1 class
-        mock_get_n_threads.assert_called_once_with(-1, 1)
-        mock_schedule_bookings.assert_called_once()
+        mock_validate_activities.assert_called_once_with(bot_instance, config)
+        # One thread per class when uncapped
+        mock_schedule_bookings.assert_called_once_with(bot_instance, config, 10, 2, 1, "Europe/Madrid", 1)
 
-    @patch("pysportbot.service.service.validate_config", side_effect=ConfigError("Invalid config"))
-    def test_run_service_config_error(self, mock_validate_config):
+    @patch("pysportbot.service.service.validate_activities")
+    @patch("pysportbot.service.service.schedule_bookings")
+    @patch("pysportbot.service.service.SportBot")
+    def test_run_service_thread_count(self, mock_sportbot_class, mock_schedule_bookings, mock_validate_activities):
         """
-        If validate_config raises ConfigError, run_service should propagate it.
+        The pool has one thread per class, capped by max_threads.
         """
+        config = make_config([ClassSpec(f"Class {i}", MONDAY, time(10, i)) for i in range(5)])
+
+        for max_threads, expected in [(None, 5), (2, 2), (10, 5)]:
+            with self.subTest(max_threads=max_threads):
+                mock_schedule_bookings.reset_mock()
+                run_service(config, max_threads=max_threads)
+                self.assertEqual(mock_schedule_bookings.call_args.args[-1], expected)
+
+    @patch("pysportbot.service.service.SportBot")
+    def test_run_service_rejects_invalid_max_threads(self, mock_sportbot_class):
+        config = make_config([ClassSpec("Yoga", MONDAY, time(10, 0))])
+
+        for max_threads in (0, -1):
+            with self.subTest(max_threads=max_threads), self.assertRaisesRegex(ValueError, "max_threads"):
+                run_service(config, max_threads=max_threads)
+        mock_sportbot_class.assert_not_called()
+
+    @patch("pysportbot.service.service.schedule_bookings")
+    @patch("pysportbot.service.service.SportBot")
+    def test_run_service_unknown_activity(self, mock_sportbot_class, mock_schedule_bookings):
+        """
+        If an activity does not exist, run_service raises ConfigError before scheduling.
+        """
+        mock_sportbot_class.return_value.activities.return_value = [Activity(id=101, name="Yoga", category_id=10)]
+        config = make_config([ClassSpec("CrossFit", MONDAY, time(18, 0))])
+
         with self.assertRaises(ConfigError) as ctx:
-            run_service(
-                config={},
-                booking_delay=0,
-                retry_attempts=1,
-                retry_delay=0,
-            )
-        self.assertIn("Invalid config", str(ctx.exception))
+            run_service(config)
+
+        self.assertIn("'CrossFit'", str(ctx.exception))
+        self.assertIn("Yoga", str(ctx.exception))
+        mock_schedule_bookings.assert_not_called()
 
 
 if __name__ == "__main__":

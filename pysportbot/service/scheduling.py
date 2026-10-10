@@ -1,55 +1,38 @@
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import date, datetime, timedelta
 
-from .config_validator import DAY_MAP
+from .config import WeeklyTime
 
 
-def calculate_next_execution(booking_execution: str, time_zone: str = "Europe/Madrid") -> datetime:
+def next_execution(execution: WeeklyTime | None, now: datetime) -> datetime:
     """
-    Calculate the next execution time based on the booking execution day and time.
+    Calculate the next execution time.
 
     Args:
-        booking_execution (str): Execution in the format 'Day HH:MM:SS' or 'now'.
-        time_zone (str): The timezone for localization.
+        execution: The weekly execution day and time, or None to execute now.
+        now: The current time as a timezone-aware datetime.
 
     Returns:
-        datetime: The next execution time as a timezone-aware datetime.
+        The next execution time in the time zone of `now`. Today counts if the execution time is still ahead. A time
+        that occurs twice when clocks go back resolves to the next occurrence that is still ahead.
     """
-    tz = ZoneInfo(time_zone)
+    if execution is None:
+        return now
 
-    # Handle the special case where execution is "now"
-    if booking_execution == "now":
-        return datetime.now(tz)
-
-    execution_day, execution_time = booking_execution.split()
-    now = datetime.now(tz)
-
-    # Map the day name to a day-of-week index
-    day_of_week_target = DAY_MAP[execution_day.lower().strip()]
-    current_weekday = now.weekday()
-
-    # Parse the execution time
-    exec_time = datetime.strptime(execution_time, "%H:%M:%S").time()
-
-    # Determine the next execution date
-    if day_of_week_target == current_weekday and now.time() < exec_time:
-        next_execution_date = now
-    else:
-        days_ahead = day_of_week_target - current_weekday
-        if days_ahead <= 0:
-            days_ahead += 7
-        next_execution_date = now + timedelta(days=days_ahead)
-
-    # Combine date and time; zoneinfo picks the UTC offset in effect on that date, so DST changes are handled
-    return datetime.combine(next_execution_date.date(), exec_time, tzinfo=tz)
+    day = now.date() + timedelta(days=(execution.weekday - now.weekday()) % 7)
+    # zoneinfo picks the UTC offset in effect on that date, so DST changes are handled. Compare instants, not wall
+    # times, and try both readings (fold) of a wall time that is ambiguous because clocks go back
+    candidates = [datetime.combine(day, execution.time.replace(fold=fold), tzinfo=now.tzinfo) for fold in (0, 1)]
+    ahead = [c for c in candidates if c.timestamp() > now.timestamp()]
+    if ahead:
+        return min(ahead, key=datetime.timestamp)
+    return datetime.combine(day + timedelta(days=7), execution.time, tzinfo=now.tzinfo)
 
 
-def calculate_class_day(class_day: str, time_zone: str = "Europe/Madrid") -> datetime:
-    tz = ZoneInfo(time_zone)
-    now = datetime.now(tz)
-    target_weekday = DAY_MAP[class_day.lower().strip()]
-    days_ahead = target_weekday - now.weekday()
-    # Ensure we always book for the upcoming week
-    if days_ahead <= 0:
-        days_ahead += 7
-    return now + timedelta(days=days_ahead)
+def next_class_date(weekday: int, now: datetime) -> date:
+    """
+    Calculate the date of the next class on the given weekday (0=Monday).
+
+    The class is always strictly in the future: if today is the class day, the class is next week.
+    """
+    days_ahead = (weekday - now.weekday()) % 7 or 7
+    return now.date() + timedelta(days=days_ahead)
