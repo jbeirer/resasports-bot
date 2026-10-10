@@ -68,6 +68,15 @@ except requests.RequestException as e:
 
 All exception classes can be imported from `pysportbot`; see `pysportbot/exceptions.py` for the full hierarchy.
 
+## Logging
+
+`SportBot(log_level=..., time_zone=...)` prints color-coded logs to stderr, with timestamps in the given time zone.
+It only configures the `pysportbot` logger and never touches the root logger, so it does not change how your own application logs.
+`pysportbot` messages are printed once by its own handler, even if your application also configures logging, e.g. with `logging.basicConfig()`.
+Without a `SportBot` instance, `pysportbot` stays silent unless you configure logging yourself.
+
+Colors are used only when stderr is a terminal. Set `NO_COLOR=1` to always disable them, or `FORCE_COLOR=1` to enable them when the output is not a terminal, e.g. in CI logs.
+
 ## Advanced usage as service
 
 You can easily run `pysportbot` as a service to manage your bookings automatically with
@@ -189,6 +198,9 @@ jobs:
           }' > config.json
 
       - name: Run pysportbot
+        env:
+          # GitHub Actions renders colored logs, but its output is not a terminal
+          FORCE_COLOR: "1"
         run: |
           python -m pysportbot.service --config config.json --log-level INFO --booking-delay 1 --retry-attempts 3 --retry-delay 5
 ```

@@ -2,9 +2,9 @@ import json
 import unittest
 from datetime import datetime
 from unittest.mock import MagicMock, call, mock_open, patch
+from zoneinfo import ZoneInfo
 
 import pandas as pd
-import pytz
 
 from pysportbot.exceptions import ConfigError, SlotAlreadyBookedError, SlotNotFoundError
 from pysportbot.service.booking import attempt_booking, schedule_bookings
@@ -173,12 +173,12 @@ class TestScheduling(unittest.TestCase):
         """
         If today is Wednesday 2024-01-10, then 'Friday 07:30:00' should be 2 days ahead (2024-01-12).
         """
-        tz = pytz.timezone("Europe/Madrid")
-        mock_now = tz.localize(datetime(2024, 1, 10, 12, 0, 0))
+        tz = ZoneInfo("Europe/Madrid")
+        mock_now = datetime(2024, 1, 10, 12, 0, 0, tzinfo=tz)
         mock_datetime.now.return_value = mock_now
 
         result = calculate_next_execution("Friday 07:30:00", time_zone="Europe/Madrid")
-        expected = tz.localize(datetime(2024, 1, 12, 7, 30, 0))
+        expected = datetime(2024, 1, 12, 7, 30, 0, tzinfo=tz)
         self.assertEqual(result, expected)
 
     @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
@@ -187,12 +187,12 @@ class TestScheduling(unittest.TestCase):
         If today is Monday 2024-01-08 at 10:00 and booking_execution is Monday 20:00,
         the next execution is that same day 20:00.
         """
-        tz = pytz.timezone("Europe/Madrid")
-        mock_now = tz.localize(datetime(2024, 1, 8, 10, 0, 0))  # Monday
+        tz = ZoneInfo("Europe/Madrid")
+        mock_now = datetime(2024, 1, 8, 10, 0, 0, tzinfo=tz)  # Monday
         mock_datetime.now.return_value = mock_now
 
         result = calculate_next_execution("Monday 20:00:00", "Europe/Madrid")
-        expected = tz.localize(datetime(2024, 1, 8, 20, 0, 0))
+        expected = datetime(2024, 1, 8, 20, 0, 0, tzinfo=tz)
         self.assertEqual(result, expected)
 
     @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
@@ -201,12 +201,12 @@ class TestScheduling(unittest.TestCase):
         If today is Monday 2024-01-08 at 22:00 and booking_execution is Monday 20:00,
         the next execution is next Monday (7 days later).
         """
-        tz = pytz.timezone("Europe/Madrid")
-        mock_now = tz.localize(datetime(2024, 1, 8, 22, 0, 0))
+        tz = ZoneInfo("Europe/Madrid")
+        mock_now = datetime(2024, 1, 8, 22, 0, 0, tzinfo=tz)
         mock_datetime.now.return_value = mock_now
 
         result = calculate_next_execution("Monday 20:00:00", "Europe/Madrid")
-        expected = tz.localize(datetime(2024, 1, 15, 20, 0, 0))
+        expected = datetime(2024, 1, 15, 20, 0, 0, tzinfo=tz)
         self.assertEqual(result, expected)
 
     @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
@@ -214,8 +214,8 @@ class TestScheduling(unittest.TestCase):
         """
         If booking_execution is 'now', we simply return the current time.
         """
-        tz = pytz.timezone("Europe/Madrid")
-        mock_now = tz.localize(datetime(2024, 1, 10, 22, 0, 0))
+        tz = ZoneInfo("Europe/Madrid")
+        mock_now = datetime(2024, 1, 10, 22, 0, 0, tzinfo=tz)
         mock_datetime.now.return_value = mock_now
 
         result = calculate_next_execution("now", "Europe/Madrid")
@@ -226,12 +226,12 @@ class TestScheduling(unittest.TestCase):
         """
         If today is Wednesday 2024-01-10, the next Monday is 2024-01-15 (5 days later).
         """
-        tz = pytz.timezone("Europe/Madrid")
-        mock_now = tz.localize(datetime(2024, 1, 10, 12, 0, 0))
+        tz = ZoneInfo("Europe/Madrid")
+        mock_now = datetime(2024, 1, 10, 12, 0, 0, tzinfo=tz)
         mock_datetime.now.return_value = mock_now
 
         result = calculate_class_day("Monday", "Europe/Madrid")
-        expected = tz.localize(datetime(2024, 1, 15, 12, 0, 0))
+        expected = datetime(2024, 1, 15, 12, 0, 0, tzinfo=tz)
         self.assertEqual(result.date(), expected.date())
 
     @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
@@ -240,15 +240,15 @@ class TestScheduling(unittest.TestCase):
         If today is Friday at 07:30 and class_day is Friday at 18:00,
         ensure the booking is for NEXT Friday, not today.
         """
-        tz = pytz.timezone("Europe/Madrid")
+        tz = ZoneInfo("Europe/Madrid")
         # Simulated Friday, Jan 5, 2024, 07:30
-        mock_now = tz.localize(datetime(2024, 1, 5, 7, 30, 0))
+        mock_now = datetime(2024, 1, 5, 7, 30, 0, tzinfo=tz)
         mock_datetime.now.return_value = mock_now
 
         result = calculate_class_day("Friday", "Europe/Madrid")
 
         # Expected: The NEXT Friday (2024-01-12), NOT today (2024-01-05)
-        expected = tz.localize(datetime(2024, 1, 12, 7, 30, 0))  # Next Friday
+        expected = datetime(2024, 1, 12, 7, 30, 0, tzinfo=tz)  # Next Friday
 
         self.assertEqual(result.date(), expected.date())
 
@@ -257,14 +257,14 @@ class TestScheduling(unittest.TestCase):
         """
         If today is Wednesday and class_day is next Tuesday, ensure it selects the next week's Tuesday.
         """
-        tz = pytz.timezone("Europe/Madrid")
-        mock_now = tz.localize(datetime(2024, 1, 10, 12, 0, 0))  # Wednesday
+        tz = ZoneInfo("Europe/Madrid")
+        mock_now = datetime(2024, 1, 10, 12, 0, 0, tzinfo=tz)  # Wednesday
         mock_datetime.now.return_value = mock_now
 
         result = calculate_class_day("Tuesday", "Europe/Madrid")
 
         # Expected: Next week's Tuesday (2024-01-16)
-        expected = tz.localize(datetime(2024, 1, 16, 12, 0, 0))
+        expected = datetime(2024, 1, 16, 12, 0, 0, tzinfo=tz)
         self.assertEqual(result.date(), expected.date())
 
     def test_day_map_contains_all_days(self):
@@ -296,9 +296,9 @@ class TestBooking(unittest.TestCase):
         Test schedule_bookings when execution is scheduled for a future time and session is invalid.
         """
         # Mock current time to simulate a future execution
-        tz = pytz.timezone("Europe/Madrid")
-        mock_now = tz.localize(datetime(2024, 1, 8, 9, 0, 0))  # Current time
-        mock_execution_time = tz.localize(datetime(2024, 1, 8, 10, 0, 0))  # 1 hour later
+        tz = ZoneInfo("Europe/Madrid")
+        mock_now = datetime(2024, 1, 8, 9, 0, 0, tzinfo=tz)  # Current time
+        mock_execution_time = datetime(2024, 1, 8, 10, 0, 0, tzinfo=tz)  # 1 hour later
 
         # Mock datetime.now() to return different values for each call
         mock_datetime.now.side_effect = [
@@ -359,9 +359,9 @@ class TestBooking(unittest.TestCase):
         Test schedule_bookings when execution is scheduled for a future time and session is valid.
         """
         # Mock current time to simulate a future execution
-        tz = pytz.timezone("Europe/Madrid")
-        mock_now = tz.localize(datetime(2024, 1, 8, 9, 0, 0))  # Current time
-        mock_execution_time = tz.localize(datetime(2024, 1, 8, 10, 0, 0))  # 1 hour later
+        tz = ZoneInfo("Europe/Madrid")
+        mock_now = datetime(2024, 1, 8, 9, 0, 0, tzinfo=tz)  # Current time
+        mock_execution_time = datetime(2024, 1, 8, 10, 0, 0, tzinfo=tz)  # 1 hour later
 
         # Mock datetime.now() to return different values for each call
         mock_datetime.now.side_effect = [
@@ -422,9 +422,9 @@ class TestBooking(unittest.TestCase):
         Test schedule_bookings when session validation throws an exception.
         """
         # Mock current time to simulate a future execution
-        tz = pytz.timezone("Europe/Madrid")
-        mock_now = tz.localize(datetime(2024, 1, 8, 9, 0, 0))  # Current time
-        mock_execution_time = tz.localize(datetime(2024, 1, 8, 10, 0, 0))  # 1 hour later
+        tz = ZoneInfo("Europe/Madrid")
+        mock_now = datetime(2024, 1, 8, 9, 0, 0, tzinfo=tz)  # Current time
+        mock_execution_time = datetime(2024, 1, 8, 10, 0, 0, tzinfo=tz)  # 1 hour later
 
         # Mock datetime.now() to return different values for each call
         mock_datetime.now.side_effect = [
@@ -487,8 +487,8 @@ class TestBooking(unittest.TestCase):
         If matching_slots is found, attempt_booking should succeed on the first try.
         """
         # Force the current date to 2024-01-10 (which is a Wednesday)
-        tz = pytz.timezone("Europe/Madrid")
-        mock_now = tz.localize(datetime(2024, 1, 10, 9, 0, 0))
+        tz = ZoneInfo("Europe/Madrid")
+        mock_now = datetime(2024, 1, 10, 9, 0, 0, tzinfo=tz)
         mock_datetime_sched.now.return_value = mock_now
 
         mock_bot = MagicMock()
@@ -515,8 +515,8 @@ class TestBooking(unittest.TestCase):
         method, which will raise an exception internally, and log warnings on each attempt.
         """
         # Make the current date 2024-01-10 (Wednesday)
-        tz = pytz.timezone("Europe/Madrid")
-        mock_now = tz.localize(datetime(2024, 1, 10, 12, 0, 0))
+        tz = ZoneInfo("Europe/Madrid")
+        mock_now = datetime(2024, 1, 10, 12, 0, 0, tzinfo=tz)
         mock_datetime_sched.now.return_value = mock_now
 
         mock_bot = MagicMock()
@@ -548,8 +548,8 @@ class TestBooking(unittest.TestCase):
         If the slot is already booked, abort further retries.
         """
         # Current date: 2024-01-10 (Wednesday)
-        tz = pytz.timezone("Europe/Madrid")
-        mock_now = tz.localize(datetime(2024, 1, 10, 10, 0, 0))
+        tz = ZoneInfo("Europe/Madrid")
+        mock_now = datetime(2024, 1, 10, 10, 0, 0, tzinfo=tz)
         mock_datetime_sched.now.return_value = mock_now
 
         mock_bot = MagicMock()

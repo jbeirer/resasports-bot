@@ -1,165 +1,210 @@
 import logging
-import unittest
+import re
+import sys
 from datetime import datetime
 from io import StringIO
-from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
-import pytz
+import pytest
 
-# Import the logger setup functions and classes
-from pysportbot.utils.logger import ColorFormatter, get_logger, set_log_level, setup_logger
+import pysportbot
+from pysportbot.logging_utils import DATE_FORMAT, LOG_FORMAT, ColorFormatter, configure_logging, set_log_level
 
-
-class TestLogger(unittest.TestCase):
-    def setUp(self):
-        """Set up a test logging configuration using the root logger."""
-        self.log_stream = StringIO()  # Capture logging output
-        self.initial_timezone = pytz.timezone("Europe/Madrid")
-
-        # Configure a test handler with ColorFormatter.
-        self.handler = logging.StreamHandler(self.log_stream)
-        self.formatter = ColorFormatter(
-            "[%(asctime)s] %(colored_bracketed_level)s %(thread_info)s%(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-            tz=self.initial_timezone,
-            include_threads=True,
-        )
-        self.handler.setFormatter(self.formatter)
-        self.handler.setLevel(logging.NOTSET)  # Let the logger handle the level
-
-        # Get the root logger and configure it
-        self.root_logger = logging.getLogger()
-        self.root_logger.setLevel(logging.INFO)
-        # Remove existing handlers to prevent duplicate logs
-        self.root_logger.handlers = []
-        self.root_logger.addHandler(self.handler)
-
-    def tearDown(self):
-        """Clean up by removing the handler."""
-        self.root_logger.removeHandler(self.handler)
-        self.log_stream.close()
-
-    def test_default_timezone(self):
-        """Test the logger defaults to Europe/Madrid time zone."""
-        setup_logger(level="INFO", timezone="Europe/Madrid")
-        self.root_logger.info("Test default time zone.")
-
-        self.handler.flush()
-        log_output = self.log_stream.getvalue().strip()
-        timestamp_str = log_output.split("]")[0].strip("[]")
-        log_time = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
-
-        # Convert log time to Europe/Madrid time zone
-        log_time_with_tz = self.initial_timezone.localize(log_time)
-        now_madrid = datetime.now(self.initial_timezone)
-
-        # Assert timestamps are almost equal
-        self.assertAlmostEqual(log_time_with_tz.timestamp(), now_madrid.timestamp(), delta=2)
-
-    def test_log_levels(self):
-        """Test logs are filtered correctly by level."""
-        setup_logger(level="WARNING", timezone="Europe/Madrid")
-        self.root_logger.debug("This should not appear.")
-        self.root_logger.info("This should not appear.")
-        self.root_logger.warning("This is a warning.")
-        self.root_logger.error("This is an error.")
-
-        self.handler.flush()
-        log_output = self.log_stream.getvalue().strip()
-
-        # Assert only WARNING and ERROR levels are logged
-        self.assertIn("This is a warning.", log_output)
-        self.assertIn("This is an error.", log_output)
-        self.assertNotIn("This should not appear.", log_output)
-
-    def test_color_formatting(self):
-        """
-        Test log levels include correct color codes, matching the actual padding:
-          - [INFO]   => 3 trailing spaces
-          - [WARNING] => 0 trailing spaces
-          - [ERROR]  => 2 trailing spaces
-        """
-        setup_logger(level="INFO", timezone="Europe/Madrid")
-        self.root_logger.info("Info message")
-        self.root_logger.warning("Warning message")
-        self.root_logger.error("Error message")
-
-        self.handler.flush()
-        log_output = self.log_stream.getvalue()
-
-        # Verify the bracketed level strings exactly:
-        self.assertIn("\033[92m[INFO]   \033[0m", log_output)  # Green for [INFO]
-        self.assertIn("\033[93m[WARNING]\033[0m", log_output)  # Yellow for [WARNING]
-        self.assertIn("\033[91m[ERROR]  \033[0m", log_output)  # Red for [ERROR]
-
-    def test_invalid_log_level(self):
-        """Test that invalid log levels raise a ValueError."""
-        with self.assertRaises(ValueError):
-            set_log_level("INVALID_LEVEL")
-
-    def test_no_duplicate_handlers(self):
-        """Test multiple calls to setup_logger do not add duplicate handlers."""
-        setup_logger(level="INFO", timezone="Europe/Madrid")
-        setup_logger(level="INFO", timezone="Europe/Madrid")  # Call again
-
-        self.root_logger.info("Test for duplicate handlers.")
-
-        self.handler.flush()
-        log_output = self.log_stream.getvalue()
-
-        # Assert message appears only once
-        self.assertEqual(log_output.count("Test for duplicate handlers."), 1)
-
-    @patch("pysportbot.utils.logger.datetime")
-    def test_custom_timezone(self, mock_datetime):
-        """Test the logger outputs timestamps in a custom time zone."""
-        # Define a fixed current time
-        fixed_time_naive = datetime(2024, 12, 31, 14, 12, 23)
-        timezone_ny = pytz.timezone("America/New_York")
-        fixed_time = timezone_ny.localize(fixed_time_naive)
-
-        # Mock datetime.now() to return the fixed_time
-        mock_datetime.now.return_value = fixed_time
-        # Mock datetime.fromtimestamp() to return the fixed_time
-        mock_datetime.fromtimestamp.return_value = fixed_time
-        # Allow datetime.strptime() to work normally
-        mock_datetime.strptime.side_effect = datetime.strptime
-
-        # Set up logger with America/New_York timezone
-        setup_logger(level="INFO", timezone="America/New_York")
-        # Update the formatter's timezone
-        self.formatter.tz = timezone_ny
-        self.root_logger.info("Test custom time zone.")
-
-        self.handler.flush()
-        log_output = self.log_stream.getvalue().strip()
-        timestamp_str = log_output.split("]")[0].strip("[]")
-        log_time = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
-
-        # Assign timezone to log_time
-        log_time_with_tz = timezone_ny.localize(log_time)
-        now_ny = fixed_time
-
-        # Calculate the absolute difference in seconds
-        time_difference = abs((now_ny - log_time_with_tz).total_seconds())
-
-        # Assert that the log_time matches the fixed_time exactly
-        self.assertEqual(time_difference, 0, f"Time difference is not zero: {time_difference} seconds")
-
-    def test_named_logger(self):
-        """Test that a named logger is correctly retrieved."""
-        setup_logger(level="INFO", timezone="Europe/Madrid")
-        logger = get_logger("test_named_logger")
-        logger.setLevel(logging.INFO)
-        logger.addHandler(self.handler)
-        logger.info("Test named logger.")
-
-        self.handler.flush()
-        log_output = self.log_stream.getvalue()
-
-        # The logger also pads "[INFO]" to 9 chars => "[INFO]   "
-        self.assertIn("\033[92m[INFO]   \033[0m Test named logger.", log_output)
+ANSI = re.compile(r"\033\[[0-9;]*m")
+MADRID = ZoneInfo("Europe/Madrid")
 
 
-if __name__ == "__main__":
-    unittest.main()
+class FakeTTY(StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
+@pytest.fixture(autouse=True)
+def clean_logging(monkeypatch):
+    """Give each test a "pysportbot" logger without our handler and no color env vars.
+
+    configure_logging() then installs a fresh handler bound to the current sys.stderr, which `capsys` captures.
+    """
+    logger = logging.getLogger("pysportbot")
+    root = logging.getLogger()
+    saved = (logger.handlers[:], logger.level, logger.propagate, root.handlers[:], root.level)
+    logger.handlers = [h for h in logger.handlers if not hasattr(h, "_pysportbot_handler")]
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+
+    yield logger
+
+    logger.handlers, _, logger.propagate, root.handlers, _ = saved
+    logger.setLevel(saved[1])
+    root.setLevel(saved[4])
+
+
+def _our_handlers(logger):
+    return [h for h in logger.handlers if hasattr(h, "_pysportbot_handler")]
+
+
+def _record(msg="message", level=logging.INFO, thread_name="MainThread", created=None):
+    record = logging.LogRecord("pysportbot.test", level, __file__, 1, msg, None, None)
+    record.threadName = thread_name
+    if created is not None:
+        record.created = created
+    return record
+
+
+def _formatter(tz=MADRID, use_color=True):
+    return ColorFormatter(LOG_FORMAT, DATE_FORMAT, tz=tz, include_threads=True, use_color=use_color)
+
+
+def test_package_logger_has_null_handler():
+    """Importing pysportbot alone must not print anything, even without logging configured."""
+    handlers = logging.getLogger(pysportbot.__name__).handlers
+    assert any(isinstance(h, logging.NullHandler) for h in handlers)
+
+
+def test_configure_logging_does_not_touch_root_logger():
+    root = logging.getLogger()
+    handlers_before, level_before = root.handlers[:], root.level
+
+    configure_logging(level="DEBUG")
+    set_log_level("ERROR")
+
+    assert root.handlers == handlers_before
+    assert root.level == level_before
+
+
+def test_configure_logging_is_idempotent(clean_logging, capsys):
+    configure_logging(level="INFO")
+    configure_logging(level="INFO")
+    logging.getLogger("pysportbot.test").info("Only once.")
+
+    assert len(_our_handlers(clean_logging)) == 1
+    assert capsys.readouterr().err.count("Only once.") == 1
+
+
+def test_configure_logging_again_updates_level(clean_logging, capsys):
+    configure_logging(level="INFO")
+    configure_logging(level="WARNING")
+    logger = logging.getLogger("pysportbot.test")
+    logger.info("This should not appear.")
+    logger.warning("This is a warning.")
+
+    output = capsys.readouterr().err
+    assert "This is a warning." in output
+    assert "This should not appear." not in output
+
+
+def test_messages_are_not_duplicated_when_app_configures_root(clean_logging, capsys):
+    """An app that calls logging.basicConfig() must not see pysportbot messages twice."""
+    # What basicConfig() does, without closing pytest's own root handlers
+    root_stream = StringIO()
+    logging.getLogger().addHandler(logging.StreamHandler(root_stream))
+    logging.getLogger().setLevel(logging.DEBUG)
+
+    configure_logging(level="INFO")
+    logging.getLogger("pysportbot.test").info("Hello.")
+
+    assert capsys.readouterr().err.count("Hello.") == 1
+    assert "Hello." not in root_stream.getvalue()
+    assert clean_logging.propagate is False
+
+
+def test_log_levels_are_filtered(capsys):
+    configure_logging(level="WARNING")
+    logger = logging.getLogger("pysportbot.test")
+    logger.debug("This should not appear.")
+    logger.info("This should not appear.")
+    logger.warning("This is a warning.")
+    logger.error("This is an error.")
+
+    output = capsys.readouterr().err
+    assert "This is a warning." in output
+    assert "This is an error." in output
+    assert "This should not appear." not in output
+
+
+def test_level_names_are_case_insensitive(clean_logging):
+    configure_logging(level="debug")
+    assert clean_logging.level == logging.DEBUG
+
+
+@pytest.mark.parametrize("setter", [configure_logging, set_log_level])
+def test_invalid_level_raises(setter):
+    with pytest.raises(ValueError, match=r"Invalid logging level: LOUD\. Valid levels are .*DEBUG"):
+        setter("LOUD")
+
+
+def test_set_log_level_changes_only_package_logger(clean_logging):
+    root_level = logging.getLogger().level
+    configure_logging(level="INFO")
+
+    set_log_level("DEBUG")
+
+    assert clean_logging.level == logging.DEBUG
+    assert logging.getLogger().level == root_level
+
+
+@pytest.mark.parametrize(
+    ("stream", "env", "colored"),
+    [
+        pytest.param(FakeTTY, {}, True, id="tty"),
+        pytest.param(FakeTTY, {"NO_COLOR": "1"}, False, id="tty+NO_COLOR"),
+        pytest.param(FakeTTY, {"NO_COLOR": ""}, True, id="tty+empty-NO_COLOR"),
+        pytest.param(StringIO, {}, False, id="pipe"),
+        pytest.param(StringIO, {"FORCE_COLOR": "1"}, True, id="pipe+FORCE_COLOR"),
+        pytest.param(FakeTTY, {"NO_COLOR": "1", "FORCE_COLOR": "1"}, False, id="NO_COLOR-wins"),
+    ],
+)
+def test_color_follows_tty_and_env(monkeypatch, stream, env, colored):
+    monkeypatch.setattr(sys, "stderr", stream())
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+
+    configure_logging(level="INFO")
+    logging.getLogger("pysportbot.test").info("Colorful?")
+
+    output = sys.stderr.getvalue()
+    assert "[INFO]    Colorful?" in ANSI.sub("", output)
+    assert bool(ANSI.search(output)) is colored
+
+
+def test_color_formatting():
+    """Levels are padded to the width of "[WARNING]" and colored per level."""
+    formatter = _formatter()
+
+    assert "\033[92m[INFO]   \033[0m Info" in formatter.format(_record("Info", logging.INFO))
+    assert "\033[93m[WARNING]\033[0m Warning" in formatter.format(_record("Warning", logging.WARNING))
+    assert "\033[91m[ERROR]  \033[0m Error" in formatter.format(_record("Error", logging.ERROR))
+
+
+def test_output_format_with_thread_info():
+    """The full line: [timestamp] [LEVEL]   [Thread N] message."""
+    created = datetime(2024, 12, 31, 14, 12, 23, tzinfo=MADRID).timestamp()
+    record = _record("Booking...", thread_name="ThreadPoolExecutor-0_1", created=created)
+
+    plain = _formatter(use_color=False).format(record)
+    colored = _formatter().format(record)
+
+    assert plain == "[2024-12-31 14:12:23] [INFO]    [Thread 1] Booking..."
+    assert "[\033[95mThread 1\033[0m] Booking..." in colored
+    assert ANSI.sub("", colored) == plain
+
+
+def test_main_thread_has_no_thread_info():
+    assert _formatter(use_color=False).format(_record("Hi")).endswith("[INFO]    Hi")
+
+
+def test_timestamps_use_configured_time_zone():
+    created = datetime(2024, 12, 31, 14, 12, 23, tzinfo=ZoneInfo("UTC")).timestamp()
+    record = _record(created=created)
+
+    assert _formatter(tz=ZoneInfo("America/New_York")).format(record).startswith("[2024-12-31 09:12:23]")
+    assert _formatter(tz=MADRID).format(record).startswith("[2024-12-31 15:12:23]")
+
+
+def test_default_time_zone_is_madrid(capsys):
+    configure_logging(level="INFO")
+    logging.getLogger("pysportbot.test").info("Now.")
+
+    timestamp = capsys.readouterr().err.split("]")[0].strip("[")
+    logged = datetime.strptime(timestamp, DATE_FORMAT).replace(tzinfo=MADRID)
+    assert abs(logged.timestamp() - datetime.now(MADRID).timestamp()) < 2

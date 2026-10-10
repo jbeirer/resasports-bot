@@ -1304,8 +1304,8 @@ source = { editable = "." }
 default-groups = ["dev", "docs"]
 dependencies = [
     { name = "pandas" },
-    { name = "pytz" },
     { name = "requests" },
+    { name = "tzdata", marker = "sys_platform == 'win32'" },
 ]
 
 [package.dev-dependencies]
@@ -1316,7 +1316,6 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "responses" },
-    { name = "types-pytz" },
     { name = "types-requests" },
 ]
 docs = [
@@ -1328,8 +1327,8 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "pandas", specifier = ">=3.0.5" },
-    { name = "pytz", specifier = ">=2026.3" },
     { name = "requests", specifier = ">=2.34.2" },
+    { name = "tzdata", marker = "sys_platform == 'win32'", specifier = ">=2026.5" },
 ]
 
 [package.metadata.requires-dev]
@@ -1340,7 +1339,6 @@ dev = [
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "responses", specifier = ">=0.26.3" },
-    { name = "types-pytz", specifier = ">=2026.3.1.20260727" },
     { name = "types-requests", specifier = ">=2.33.0.20260712" },
 ]
 docs = [
@@ -1401,15 +1399,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b0/73/54993df8fc57e906dc9b7e01d1d9b0b2d3eb0ce3190639e33dccb12853f7/python_discovery-1.6.2.tar.gz", hash = "sha256:cd1738ca1d37c86ef9d0b654dd46fcee1e41c97c6add12575e8501ced39afdb4", size = 86921, upload-time = "2026-10-10T01:24:27.912Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/61/3b/50ed32583bfffa737df67d33b9c15d7b25df232c55ab606d059f610ef6ca/python_discovery-1.6.2-py3-none-any.whl", hash = "sha256:f0c697f95a3aaec4174a6e5e58f5885e25768684bafc76f1afde384709ebdcf2", size = 38912, upload-time = "2026-10-10T01:24:26.721Z" },
-]
-
-[[package]]
-name = "pytz"
-version = "2026.5"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/14/21/d83d6ef28c4c912c4bb4d1dcf591f7b8c6bde87b9c66f9f454677314e16d/pytz-2026.5.tar.gz", hash = "sha256:fa23724b9c486543b9ff54a327ee7569ac83ade54bb9afd0fc18676620401c86", size = 318572, upload-time = "2026-10-04T02:37:58.719Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/4f/ef/c66110d46fb800dda0bf33164182dfadabe26a90e4476844d502a23dca8e/pytz-2026.5-py2.py3-none-any.whl", hash = "sha256:e658af3757f9e26a9d25dd2aff38335acd92bc9104f890a894b2c1ba28311b03", size = 506342, upload-time = "2026-10-04T02:37:56.814Z" },
 ]
 
 [[package]]
@@ -1599,15 +1588,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/1c/b8/63a75cfb27a17c38550e44025d3a6e7be64516fd8608a3b75703bf37d81b/tomli-2.5.0-cp315-cp315t-win_amd64.whl", hash = "sha256:f3fcbc57b1791fa6cbe5d8434179d51de12be1a4811469529f47f6e7487a2571", size = 117281, upload-time = "2026-10-07T12:23:34.648Z" },
     { url = "https://files.pythonhosted.org/packages/72/01/e8c1debb2173973372934c68fc8e46170ab60ef23ed4592dff4dec6e8993/tomli-2.5.0-cp315-cp315t-win_arm64.whl", hash = "sha256:d2ba24db8a9376921b5e87b4762b9adb0f3f1deaea68f2b8b0bb2c11efb9c3e7", size = 115069, upload-time = "2026-10-07T12:23:35.77Z" },
     { url = "https://files.pythonhosted.org/packages/60/3f/3e3f8fd0919249b0200c80fbc4f9a1e70be19f9883da71dfb7f8b9ab8aca/tomli-2.5.0-py3-none-any.whl", hash = "sha256:32a7b79ac57a2e83670ce329ccf675798bc5a2094783a63676866b70503f2e2b", size = 14765, upload-time = "2026-10-07T12:23:36.875Z" },
-]
-
-[[package]]
-name = "types-pytz"
-version = "2026.5.0.20261006"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ba/47/b493f47f2dd0971db06459439ebdeb114cf95029188268099b331bbc4727/types_pytz-2026.5.0.20261006.tar.gz", hash = "sha256:1a522c2ec03aad8d4baaf97105958019ad51704b1e471c882d1c6ccea3e5e64b", size = 11073, upload-time = "2026-10-06T08:15:12.87Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/77/38/e375026fb4ff74fed6bdb84d7d336571d0603b6b9675751579cec84cfc9b/types_pytz-2026.5.0.20261006-py3-none-any.whl", hash = "sha256:9e4a893b362a8eed4e10a348c80603ade65bdb3819419e589364afafe2ea08b1", size = 10168, upload-time = "2026-10-06T08:15:11.985Z" },
 ]
 
 [[package]]

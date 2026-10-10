@@ -24,8 +24,11 @@ from .exceptions import (
     SlotUnavailableError,
     SportBotError,
 )
+from .logging_utils import configure_logging, set_log_level
 from .session import Session
-from .utils.logger import set_log_level, setup_logger
+
+# Silence pysportbot by default; SportBot() or configure_logging() opt into output
+logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 __all__ = [
     "APIError",
@@ -50,8 +53,8 @@ class SportBot:
     """Unified interface for interacting with the booking system."""
 
     def __init__(self, log_level: str = "INFO", print_centres: bool = False, time_zone: str = "Europe/Madrid") -> None:
-        setup_logger(log_level, timezone=time_zone)
-        self._logger = logging.getLogger("SportBot")
+        configure_logging(log_level, timezone=time_zone)
+        self._logger = logging.getLogger(__name__)
         self._logger.info("Initializing SportBot...")
         self._logger.info(f"Log level: {log_level}")
         self._logger.info(f"Time zone: {time_zone}")

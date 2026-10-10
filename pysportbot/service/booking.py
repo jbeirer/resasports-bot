@@ -1,18 +1,18 @@
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
-import pytz
 import requests
 
 from pysportbot import SportBot
 from pysportbot.exceptions import SlotAlreadyBookedError, SlotFullError, SportBotError
-from pysportbot.utils.logger import get_logger
 
 from .scheduling import calculate_class_day, calculate_next_execution
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def attempt_booking(
@@ -95,7 +95,7 @@ def schedule_bookings(
     execution_time = calculate_next_execution(booking_execution, time_zone)
 
     # Get the time now
-    now = datetime.now(pytz.timezone(time_zone))
+    now = datetime.now(ZoneInfo(time_zone))
 
     # Calculate the seconds until execution
     time_until_execution = (execution_time - now).total_seconds()
@@ -126,7 +126,7 @@ def schedule_bookings(
             logger.warning(f"Re-authentication failed before booking execution with {e}.")
 
         # Wait the remaining time until execution
-        now = datetime.now(pytz.timezone(time_zone))
+        now = datetime.now(ZoneInfo(time_zone))
         remaining_time = (execution_time - now).total_seconds()
         if remaining_time > 0:
             logger.info(f"Waiting {remaining_time:.2f} seconds until booking execution.")

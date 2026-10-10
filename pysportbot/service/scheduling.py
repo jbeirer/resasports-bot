@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta
-
-import pytz
+from zoneinfo import ZoneInfo
 
 from .config_validator import DAY_MAP
 
@@ -16,7 +15,7 @@ def calculate_next_execution(booking_execution: str, time_zone: str = "Europe/Ma
     Returns:
         datetime: The next execution time as a timezone-aware datetime.
     """
-    tz = pytz.timezone(time_zone)
+    tz = ZoneInfo(time_zone)
 
     # Handle the special case where execution is "now"
     if booking_execution == "now":
@@ -41,18 +40,12 @@ def calculate_next_execution(booking_execution: str, time_zone: str = "Europe/Ma
             days_ahead += 7
         next_execution_date = now + timedelta(days=days_ahead)
 
-    # Combine date and time
-    execution_datetime = datetime.combine(next_execution_date.date(), exec_time)
-
-    # Localize if naive
-    if execution_datetime.tzinfo is None:
-        execution_datetime = tz.localize(execution_datetime)
-
-    return execution_datetime
+    # Combine date and time; zoneinfo picks the UTC offset in effect on that date, so DST changes are handled
+    return datetime.combine(next_execution_date.date(), exec_time, tzinfo=tz)
 
 
 def calculate_class_day(class_day: str, time_zone: str = "Europe/Madrid") -> datetime:
-    tz = pytz.timezone(time_zone)
+    tz = ZoneInfo(time_zone)
     now = datetime.now(tz)
     target_weekday = DAY_MAP[class_day.lower().strip()]
     days_ahead = target_weekday - now.weekday()

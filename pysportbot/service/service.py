@@ -1,10 +1,12 @@
+import logging
 from typing import Any
 
 from pysportbot import SportBot
 from pysportbot.service.booking import schedule_bookings
 from pysportbot.service.config_validator import validate_activities, validate_config
 from pysportbot.service.threading import get_n_threads
-from pysportbot.utils.logger import get_logger
+
+logger = logging.getLogger(__name__)
 
 
 def run_service(
@@ -30,10 +32,6 @@ def run_service(
     Raises:
         ValueError: If retry_attempts < 1, retry_delay < 0, booking_delay < 0, or the config is invalid.
     """
-    # Initialize logger
-    logger = get_logger(__name__)
-    logger.setLevel(log_level)
-
     # Validate service arguments
     if retry_attempts < 1:
         raise ValueError(f"retry_attempts must be at least 1, got {retry_attempts}.")

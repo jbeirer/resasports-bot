@@ -1,9 +1,8 @@
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import patch
 from urllib.parse import parse_qs
 
 import pytest
-import pytz
 import responses
 
 from pysportbot import SportBot
@@ -17,7 +16,7 @@ ACTIVITY_COLUMNS = ["id_activity", "name_activity", "id_category_activity"]
 DAY = "2030-01-04"
 EMPTY_CALENDAR = {"data": {"activities_calendar": []}}
 # 00:30 on 2030-01-04 in Madrid, but still 2030-01-03 in UTC
-FROZEN_UTC = datetime(2030, 1, 3, 23, 30, tzinfo=pytz.utc)
+FROZEN_UTC = datetime(2030, 1, 3, 23, 30, tzinfo=UTC)
 
 
 def _frozen_now(tz=None):
@@ -110,6 +109,26 @@ def test_daily_slots_request_body(activities, mocked_api, payloads):
     }
 
 
+def test_daily_slots_sends_canonical_date(activities, mocked_api):
+    df_activities = activities.fetch()
+
+    activities.daily_slots(df_activities, "Yoga", DAY.replace("-", ""))
+
+    body = parse_qs(_slots_calls(mocked_api)[-1].request.body)
+    assert body["start_timestamp"] == body["end_timestamp"] == [DAY]
+
+
+@pytest.mark.parametrize("day", ["2030-13-01", "2030-02-30", "04/01/2030", "tomorrow", ""])
+def test_daily_slots_invalid_day_raises_before_request(activities, mocked_api, day):
+    df_activities = activities.fetch()
+    n_calls = len(mocked_api.calls)
+
+    with pytest.raises(ValueError, match=f"Invalid day '{day}'"):
+        activities.daily_slots(df_activities, "Yoga", day)
+
+    assert len(mocked_api.calls) == n_calls
+
+
 def test_daily_slots_unknown_activity_raises(activities):
     df_activities = activities.fetch()
 
@@ -157,13 +176,13 @@ def test_daily_slots_no_matching_activity(activities, mocked_api, payloads):
 
 
 @pytest.mark.parametrize(
-    ("time_zone", "expected_start"),
+    ("time_zone", "expected_start", "expected_end"),
     [
-        ("Europe/Madrid", "2030-01-04"),
-        ("America/New_York", "2030-01-03"),
+        ("Europe/Madrid", "2030-01-04", "2030-01-11"),
+        ("America/New_York", "2030-01-03", "2030-01-10"),
     ],
 )
-def test_fetch_window_uses_configured_time_zone(mocked_api, time_zone, expected_start):
+def test_fetch_window_uses_configured_time_zone(mocked_api, time_zone, expected_start, expected_end):
     auth = Authenticator(Session(), "test-centre")
     auth.login("user@example.com", "password")
     activities = Activities(auth, time_zone=time_zone)
@@ -174,6 +193,7 @@ def test_fetch_window_uses_configured_time_zone(mocked_api, time_zone, expected_
 
     body = parse_qs(_slots_calls(mocked_api)[-1].request.body)
     assert body["start_timestamp"] == [expected_start]
+    assert body["end_timestamp"] == [expected_end]
 
 
 def test_sportbot_passes_time_zone_to_activities(mocked_api, centre_slug):
