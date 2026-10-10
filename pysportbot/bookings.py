@@ -92,7 +92,8 @@ class Bookings:
                     f"Booking failed with error code: {error_code}. Response: {json.dumps(response_json)[:200]}"
                 )
             else:
-                logger.warning(str(error))
+                # Expected outcomes, reported by the exception: the caller decides how loudly
+                logger.debug(str(error))
             raise error
 
     def cancel(self, slot_id: str) -> None:

@@ -321,12 +321,59 @@ def _write_config(path, class_time):
 def test_run_dry_run_reports_full_slot(mocked_api, mock_time, frozen_now, config_path, credentials_env, capsys):
     _write_config(config_path, "10:00")  # The fixture's full Gimnasio slot
 
-    assert main(["run", "--config", str(config_path), "--dry-run", "--retry-attempts", "3"]) == 0
+    assert main(["run", "--config", str(config_path), "--dry-run", "--retry-attempts", "3"]) == 1
 
     err = capsys.readouterr().err
     assert "would book" not in err
-    assert "Slot 5002 is full and cannot be booked. Skipping further retries." in err
+    assert "after 1 attempt(s): Slot 5002 is full and cannot be booked." in err
     assert _calls(mocked_api, Endpoints.BOOKING) == []
+    mock_time.sleep.assert_not_called()
+
+
+def _write_classes(path, *classes):
+    path.write_text(
+        json.dumps(
+            {"classes": [{"activity": activity, "class_day": "Friday", "class_time": t} for activity, t in classes]}
+        )
+    )
+
+
+def test_run_exits_1_if_a_class_is_not_booked(
+    mocked_api, mock_time, frozen_now, config_path, credentials_env, full_slot_refused, capsys
+):
+    _write_classes(config_path, ("Gimnasio", "12:00"), ("Gimnasio", "10:00"))  # Open and full
+
+    assert main(["run", "--config", str(config_path)]) == 1
+
+    err = capsys.readouterr().err
+    assert "Booking summary:" in err
+    assert "Gimnasio  Friday 2030-01-04  12:00  booked  " in err
+    assert "Gimnasio  Friday 2030-01-04  10:00  full    " in err
+    assert "1 of 2 classes could not be booked." in err
+
+
+def test_run_exits_0_if_all_classes_are_booked_or_already_booked(
+    mocked_api, mock_time, frozen_now, config_path, credentials_env, capsys
+):
+    _write_classes(config_path, ("Gimnasio", "12:00"), ("Yoga", "18:00"))
+    mocked_api.add(responses.POST, str(Endpoints.BOOKING), json={"success": False, "error": 5})
+
+    assert main(["run", "--config", str(config_path)]) == 0
+
+    err = capsys.readouterr().err
+    assert " booked " in err
+    assert " already booked " in err
+    assert "All bookings completed." in err
+
+
+def test_run_accepts_fractional_seconds(mocked_api, mock_time, frozen_now, config_path, credentials_env):
+    mocked_api.replace(responses.POST, str(Endpoints.BOOKING), json={"success": False, "error": 28})
+    mocked_api.add(responses.POST, str(Endpoints.BOOKING), json={"success": True})
+    argv = ["run", "--config", str(config_path), "--booking-delay", "0.25", "--poll-interval", "0.1"]
+
+    assert main([*argv, "--poll-window", "5", "--retry-delay", "0.5"]) == 0
+
+    assert [c.args for c in mock_time.sleep.call_args_list] == [(0.25,), (0.1,)]
 
 
 def test_run_dry_run_reports_cancelled_slot(
@@ -337,11 +384,12 @@ def test_run_dry_run_reports_cancelled_slot(
     entry["cancelled"] = 1
     mocked_api.replace(responses.POST, str(Endpoints.SLOTS), json=calendar)
 
-    assert main(["run", "--config", str(config_path), "--dry-run"]) == 0
+    assert main(["run", "--config", str(config_path), "--dry-run"]) == 1
 
     err = capsys.readouterr().err
     assert "would book" not in err
-    assert "DRY RUN: 'Gimnasio' on Friday 2030-01-04 at 12:00 is cancelled, so booking it would fail." in err
+    assert "after 1 attempt(s): Slot 5004 is cancelled, so booking it would fail." in err
+    assert "Gimnasio  Friday 2030-01-04  12:00  failed  1" in err
     assert _calls(mocked_api, Endpoints.BOOKING) == []
 
 
@@ -356,6 +404,14 @@ def test_service_alias_runs_run_command(mocked_api, mock_time, frozen_now, confi
     assert service_main(["--config", str(config_path), "--max-threads", "-1"]) == 0
 
     assert len(_calls(mocked_api, Endpoints.BOOKING)) == 1
+
+
+def test_service_alias_exits_1_if_a_class_is_not_booked(
+    mocked_api, mock_time, frozen_now, config_path, credentials_env, full_slot_refused
+):
+    _write_config(config_path, "10:00")  # The fixture's full Gimnasio slot
+
+    assert service_main(["--config", str(config_path)]) == 1
 
 
 def test_run_reports_config_error_without_traceback(mocked_api, tmp_path, capsys):
@@ -390,7 +446,12 @@ def test_run_reports_unknown_activity_as_config_error(mocked_api, config_path, c
         ("--retry-attempts", "0"),
         ("--retry-delay", "-1"),
         ("--booking-delay", "-1"),
-        ("--booking-delay", "1.5"),
+        ("--booking-delay", "inf"),
+        ("--retry-delay", "nan"),
+        ("--retry-delay", "five"),
+        ("--poll-interval", "0"),
+        ("--poll-interval", "-0.5"),
+        ("--poll-window", "-1"),
         ("--time-zone", "Mars/Base"),
         ("--time-zone", "../etc"),
         ("--log-level", "LOUD"),

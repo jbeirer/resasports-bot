@@ -4,6 +4,7 @@ import argparse
 import getpass
 import json
 import logging
+import math
 import os
 import sys
 from collections.abc import Sequence
@@ -66,11 +67,21 @@ def _positive_int(value: str) -> int:
     return n
 
 
-def _non_negative_int(value: str) -> int:
-    n = _int(value)
-    if n < 0:
-        raise argparse.ArgumentTypeError(f"must not be negative, got {n}")
-    return n
+def _seconds(value: str) -> float:
+    try:
+        seconds = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid number of seconds: '{value}'") from None
+    if not math.isfinite(seconds) or seconds < 0:
+        raise argparse.ArgumentTypeError(f"must be a non-negative number of seconds, got {value}")
+    return seconds
+
+
+def _positive_seconds(value: str) -> float:
+    seconds = _seconds(value)
+    if seconds == 0:
+        raise argparse.ArgumentTypeError(f"must be a positive number of seconds, got {value}")
+    return seconds
 
 
 def _max_threads(value: str) -> int | None:
@@ -270,17 +281,20 @@ def _cmd_cancel(args: argparse.Namespace) -> int:
 
 def _cmd_run(args: argparse.Namespace) -> int:
     config = load_config(args.config)
-    run_service(
+    results = run_service(
         config,
         booking_delay=args.booking_delay,
         retry_attempts=args.retry_attempts,
         retry_delay=args.retry_delay,
+        poll_interval=args.poll_interval,
+        poll_window=args.poll_window,
         time_zone=args.time_zone,
         log_level=args.log_level,
         max_threads=args.max_threads,
         dry_run=args.dry_run,
     )
-    return EXIT_OK
+    # Fail if any class was not booked, so that e.g. a scheduled GitHub Actions run shows up as failed
+    return EXIT_OK if all(r.ok for r in results) else EXIT_FAILURE
 
 
 # Parser
@@ -358,15 +372,41 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--config", required=True, help="Path to the JSON or TOML configuration file.")
     run.add_argument(
         "--booking-delay",
-        type=_non_negative_int,
-        default=0,
-        help="Global delay in seconds before booking [default: 0].",
+        type=_seconds,
+        default=0.0,
+        metavar="SECONDS",
+        help="Global delay in seconds after the execution time before booking [default: 0].",
     )
     run.add_argument(
-        "--retry-attempts", type=_positive_int, default=3, help="Number of booking attempts per class [default: 3]."
+        "--retry-attempts",
+        type=_positive_int,
+        default=3,
+        metavar="N",
+        help=(
+            "Maximum number of attempts per class that fail with an error that may be temporary, such as a network "
+            "error [default: 3]."
+        ),
     )
     run.add_argument(
-        "--retry-delay", type=_non_negative_int, default=5, help="Delay in seconds between retries [default: 5]."
+        "--retry-delay",
+        type=_seconds,
+        default=5.0,
+        metavar="SECONDS",
+        help="Delay in seconds after such an error [default: 5].",
+    )
+    run.add_argument(
+        "--poll-interval",
+        type=_positive_seconds,
+        default=0.5,
+        metavar="SECONDS",
+        help="Delay in seconds between attempts while a slot is not bookable yet or not found [default: 0.5].",
+    )
+    run.add_argument(
+        "--poll-window",
+        type=_seconds,
+        default=60.0,
+        metavar="SECONDS",
+        help="How long to keep polling, in seconds after booking starts [default: 60].",
     )
     run.add_argument(
         "--max-threads",
@@ -405,8 +445,8 @@ def main(argv: list[str] | None = None) -> int:
         argv: The arguments, without the program name. None reads them from `sys.argv`.
 
     Returns:
-        The exit code: 0 on success, 1 if the operation failed, 2 for a usage, config or credential error, and 130
-        if interrupted.
+        The exit code: 0 on success, 1 if the operation failed (for `run`: if any class was not booked), 2 for a
+        usage, config or credential error, and 130 if interrupted.
     """
     try:
         args = build_parser().parse_args(argv)

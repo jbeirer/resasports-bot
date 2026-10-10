@@ -128,14 +128,50 @@ def test_book_success_sends_one_request(offline_bot, mocked_api):
         (28, SlotNotBookableYetError),
     ],
 )
-def test_book_propagates_api_error(offline_bot, mocked_api, error_code, error_class):
+@pytest.mark.parametrize(
+    "book",
+    [
+        pytest.param(lambda bot: bot.book("Gimnasio", OPEN_SLOT), id="book"),
+        pytest.param(lambda bot: bot.book_slot(bot.find_slot("Gimnasio", OPEN_SLOT)), id="book_slot"),
+    ],
+)
+def test_book_propagates_api_error(offline_bot, mocked_api, error_code, error_class, book):
     mocked_api.replace(responses.POST, str(Endpoints.BOOKING), json={"success": False, "error": error_code})
 
     with pytest.raises(error_class) as exc_info:
-        offline_bot.book("Gimnasio", OPEN_SLOT)
+        book(offline_bot)
 
     assert str(exc_info.value.slot_id) == OPEN_SLOT_ID
     assert exc_info.value.code == error_code
+
+
+def test_book_slot_sends_only_the_booking_request(offline_bot, mocked_api):
+    slot = offline_bot.find_slot("Gimnasio", OPEN_SLOT)
+    n_calls = len(mocked_api.calls)
+
+    assert offline_bot.book_slot(slot) is slot
+
+    assert [c.request.url for c in mocked_api.calls[n_calls:]] == [str(Endpoints.BOOKING)]
+    assert parse_qs(mocked_api.calls[-1].request.body)["id_activity_calendar"] == [OPEN_SLOT_ID]
+
+
+def test_book_slot_leaves_full_slots_to_the_api(offline_bot, mocked_api):
+    # The counts may be stale by the time a slot found earlier is booked
+    slot = offline_bot.find_slot("Gimnasio", FULL_SLOT)
+    assert slot.is_full
+
+    offline_bot.book_slot(slot)
+
+    assert len(_calls_to(mocked_api, Endpoints.BOOKING)) == 1
+
+
+def test_book_slot_requires_login(offline_bot, mocked_api):
+    slot = offline_bot.find_slot("Gimnasio", OPEN_SLOT)
+
+    with pytest.raises(NotLoggedInError):
+        SportBot().book_slot(slot)
+
+    assert _calls_to(mocked_api, Endpoints.BOOKING) == []
 
 
 def test_cancel_propagates_api_error(offline_bot, mocked_api):
