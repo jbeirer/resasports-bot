@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 import pysportbot
+from pysportbot import SportBot
 from pysportbot.logging_utils import DATE_FORMAT, LOG_FORMAT, ColorFormatter, configure_logging, set_log_level
 
 ANSI = re.compile(r"\033\[[0-9;]*m")
@@ -21,7 +22,7 @@ class FakeTTY(StringIO):
 
 @pytest.fixture(autouse=True)
 def clean_logging(monkeypatch):
-    """Give each test a "pysportbot" logger without our handler and no color env vars.
+    """Give each test a "pysportbot" logger as after a fresh import: no handler of ours, no level, propagating.
 
     configure_logging() then installs a fresh handler bound to the current sys.stderr, which `capsys` captures.
     """
@@ -29,6 +30,8 @@ def clean_logging(monkeypatch):
     root = logging.getLogger()
     saved = (logger.handlers[:], logger.level, logger.propagate, root.handlers[:], root.level)
     logger.handlers = [h for h in logger.handlers if not hasattr(h, "_pysportbot_handler")]
+    logger.setLevel(logging.NOTSET)
+    logger.propagate = True
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.delenv("FORCE_COLOR", raising=False)
 
@@ -59,6 +62,18 @@ def test_package_logger_has_null_handler():
     """Importing pysportbot alone must not print anything, even without logging configured."""
     handlers = logging.getLogger(pysportbot.__name__).handlers
     assert any(isinstance(h, logging.NullHandler) for h in handlers)
+
+
+def test_sportbot_log_level_none_leaves_logging_to_app(clean_logging, mocked_api, caplog, capsys):
+    """Apps with their own logging setup opt out of our handler and receive records through the root logger."""
+    caplog.set_level(logging.INFO)
+
+    SportBot(log_level=None)
+
+    assert _our_handlers(clean_logging) == []
+    assert clean_logging.propagate is True
+    assert "Initializing SportBot..." in caplog.text
+    assert capsys.readouterr().err == ""
 
 
 def test_configure_logging_does_not_touch_root_logger():

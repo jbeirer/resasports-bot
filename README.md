@@ -76,6 +76,9 @@ It only configures the `pysportbot` logger and never touches the root logger, so
 `pysportbot` messages are printed once by its own handler, even if your application also configures logging, e.g. with `logging.basicConfig()`.
 Without a `SportBot` instance, `pysportbot` stays silent unless you configure logging yourself.
 
+If your application manages logging itself, e.g. to send logs to a central handler, pass `SportBot(log_level=None)`.
+`pysportbot` then installs no handler and its records propagate to your root logger handlers, at the levels you configure, e.g. via `logging.getLogger("pysportbot")`.
+
 Colors are used only when stderr is a terminal. Set `NO_COLOR=1` to always disable them, or `FORCE_COLOR=1` to enable them when the output is not a terminal, e.g. in CI logs.
 
 ## Advanced usage as service

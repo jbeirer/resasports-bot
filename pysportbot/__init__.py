@@ -52,11 +52,16 @@ __all__ = [
 class SportBot:
     """Unified interface for interacting with the booking system."""
 
-    def __init__(self, log_level: str = "INFO", print_centres: bool = False, time_zone: str = "Europe/Madrid") -> None:
-        configure_logging(log_level, timezone=time_zone)
+    def __init__(
+        self, log_level: str | None = "INFO", print_centres: bool = False, time_zone: str = "Europe/Madrid"
+    ) -> None:
+        # log_level=None leaves logging to the application: records propagate to its handlers as configured
+        if log_level is not None:
+            configure_logging(log_level, timezone=time_zone)
         self._logger = logging.getLogger(__name__)
         self._logger.info("Initializing SportBot...")
-        self._logger.info(f"Log level: {log_level}")
+        if log_level is not None:
+            self._logger.info(f"Log level: {log_level}")
         self._logger.info(f"Time zone: {time_zone}")
         self._time_zone = time_zone
         self._centres = Centres(print_centres)
