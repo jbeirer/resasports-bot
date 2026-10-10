@@ -467,6 +467,33 @@ def test_booking_delay_does_not_shorten_poll_window(offline_bot, mocked_api, fro
     assert results[0].status == BookingStatus.FAILED
 
 
+def test_class_queued_behind_max_threads_gets_full_poll_window(frozen_now, mock_time, fake_clock):
+    first, second = ClassSpec("First", FRIDAY, time(9, 0)), ClassSpec("Second", FRIDAY, time(12, 0))
+    config = ServiceConfig(
+        email="user@example.com",
+        password="password",
+        centre="test-centre",
+        execution=WeeklyTime(FRIDAY, time(7, 40)),
+        classes=(first, second),
+    )
+    second_attempts = []
+
+    def book_slot(slot):
+        if slot == "Second":
+            second_attempts.append(fake_clock.elapsed)
+            if len(second_attempts) > 1:
+                return slot
+        raise SlotNotBookableYetError(slot, 28)
+
+    bot = MagicMock(**{"find_slot.side_effect": lambda activity, start: activity, "book_slot.side_effect": book_slot})
+
+    results = schedule_bookings(bot, config, RetryPolicy(poll_interval=10, poll_window=30), max_threads=1)
+
+    # The first class polls from 600 to 630 s; the second only starts then, and still polls
+    assert [r.status for r in results] == [BookingStatus.FAILED, BookingStatus.BOOKED]
+    assert second_attempts == [630, 640]
+
+
 def test_dry_run_uses_slot_found_ahead_of_time(offline_bot, mocked_api, frozen_now, mock_time):
     n_calls = len(mocked_api.calls)
 

@@ -214,13 +214,14 @@ def _book_class(
     # Each class looks up its own slot, so that a slow lookup cannot delay the booking of the other classes
     slot = _look_up(bot, spec, start) if look_up else None
     sleep_until(booking_start, clock=clock, sleep=sleep)
+    # A class queued behind --max-threads starts late, but still gets the full poll window
     return attempt_booking(
         bot,
         spec,
         start,
         policy,
         slot=slot,
-        poll_until=booking_start + policy.poll_window,
+        poll_until=max(booking_start, clock()) + policy.poll_window,
         dry_run=dry_run,
         clock=clock,
         sleep=sleep,
