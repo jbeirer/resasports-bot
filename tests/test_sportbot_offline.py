@@ -97,6 +97,24 @@ def test_cancel_unknown_time_raises(offline_bot):
         offline_bot.cancel("Gimnasio", f"{DAY} 23:00:00")
 
 
+@pytest.mark.parametrize("method", ["book", "cancel"])
+def test_empty_calendar_raises_slot_not_found(offline_bot, mocked_api, method):
+    mocked_api.replace(responses.POST, str(Endpoints.SLOTS), json={"data": {"activities_calendar": []}})
+
+    with pytest.raises(SlotNotFoundError):
+        getattr(offline_bot, method)("Gimnasio", OPEN_SLOT)
+
+
+def test_failed_relogin_clears_activities(offline_bot, mocked_api, centre_slug):
+    mocked_api.replace(responses.POST, str(Endpoints.USER_LOGIN), status=401)
+
+    with pytest.raises(AuthenticationError):
+        offline_bot.login("user@example.com", "wrong-password", centre_slug)
+
+    with pytest.raises(NotLoggedInError):
+        offline_bot.activities()
+
+
 def test_login_failure_resets_state(mocked_api, centre_slug):
     mocked_api.replace(responses.POST, str(Endpoints.USER_LOGIN), status=401)
     bot = SportBot()

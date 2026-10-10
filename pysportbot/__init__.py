@@ -113,6 +113,7 @@ class SportBot:
             self._activities = None
             self._bookings = None
             self._auth = None
+            self._df_activities = None
             self._logger.exception("Login failed.")
             raise
 
@@ -141,8 +142,8 @@ class SportBot:
         # Fetch the daily slots for the activity
         slots = self.daily_slots(activity, start_time.split(" ")[0])
 
-        # Find the slot that matches the start time
-        matching_slot = slots[slots["start_timestamp"] == start_time]
+        # Find the slot that matches the start time; without slots, daily_slots returns a DataFrame without columns
+        matching_slot = slots[slots["start_timestamp"] == start_time] if not slots.empty else slots
 
         # If no matching slot is found, raise an error
         if matching_slot.empty:
@@ -183,7 +184,7 @@ class SportBot:
             raise NotLoggedInError()
 
         slots = self.daily_slots(activity, start_time.split(" ")[0])
-        matching_slot = slots[slots["start_timestamp"] == start_time]
+        matching_slot = slots[slots["start_timestamp"] == start_time] if not slots.empty else slots
         if matching_slot.empty:
             error = SlotNotFoundError(activity, start_time)
             self._logger.error(str(error))

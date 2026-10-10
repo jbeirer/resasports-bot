@@ -109,6 +109,15 @@ def test_attempt_booking_retries_when_slot_not_found(offline_bot, mocked_api, fr
     assert mock_time.sleep.call_count == 2
 
 
+def test_attempt_booking_retries_when_calendar_empty(offline_bot, mocked_api, frozen_class_day, mock_time):
+    mocked_api.replace(responses.POST, str(Endpoints.SLOTS), json={"data": {"activities_calendar": []}})
+
+    _attempt(offline_bot)
+
+    assert _booking_calls(mocked_api) == []
+    assert mock_time.sleep.call_count == 2
+
+
 def test_attempt_booking_stops_when_already_booked(offline_bot, mocked_api, frozen_class_day, mock_time):
     mocked_api.replace(responses.POST, str(Endpoints.BOOKING), json={"success": False, "error": 5})
 
