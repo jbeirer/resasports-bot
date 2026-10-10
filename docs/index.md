@@ -24,22 +24,22 @@ pip install pysportbot
 from pysportbot import SportBot
 
 # Create bot instance, will list available centres if requested
-bot = SportBot(log_level='INFO', print_centres=False, time_zone = 'Europe/Madrid')
+bot = SportBot(log_level="INFO", print_centres=False, time_zone="Europe/Madrid")
 
 # Connect to service with email and password as well as the name of the centre
-bot.login('email', 'password', 'centre')
+bot.login("email", "password", "centre")
 
 # List available activites
-bot.activities(limit = 10)
+bot.activities(limit=10)
 
 # List bookable slots for an activity on a specific day
-bot.daily_slots(activity='YourFavouriteGymClass', day = '2025-01-03', limit = 10)
+bot.daily_slots(activity="YourFavouriteGymClass", day="2025-01-03", limit=10)
 
 # Book an activity slot on a specific day and time
-bot.book(activity='YourFavouriteGymClass', start_time = '2024-12-30 07:00:00')
+bot.book(activity="YourFavouriteGymClass", start_time="2024-12-30 07:00:00")
 
 # Cancel an activity slot on a specific day and time
-bot.cancel(activity='YourFavouriteGymClass', start_time = '2024-12-30 07:00:00')
+bot.cancel(activity="YourFavouriteGymClass", start_time="2024-12-30 07:00:00")
 ```
 
 ## Advanced usage as service

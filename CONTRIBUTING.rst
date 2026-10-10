@@ -13,7 +13,7 @@ Types of Contributions
 Report Bugs
 ~~~~~~~~~~~
 
-Report bugs at https://github.com/jbeirer/pysportbot/issues
+Report bugs at https://github.com/jbeirer/resasports-bot/issues
 
 If you are reporting a bug, please include:
 
@@ -44,7 +44,7 @@ Submit Feedback
 ~~~~~~~~~~~~~~~
 
 The best way to send feedback is to file an issue at
-https://github.com/jbeirer/pysportbot/issues.
+https://github.com/jbeirer/resasports-bot/issues.
 
 If you are proposing a new feature:
 
@@ -58,44 +58,35 @@ Get Started!
 
 Ready to contribute? Here's how to set up `pysportbot` for local
 development. Please note this documentation assumes you already have
-`poetry` and `Git` installed and ready to go.
+`uv <https://docs.astral.sh/uv/>`_ and ``Git`` installed and ready to go.
 
-| 1. Fork the `pysportbot` repo on GitHub.
+| 1. Fork the `resasports-bot` repo on GitHub.
 
 | 2. Clone your fork locally:
 
    .. code-block:: bash
 
         cd <directory_in_which_repo_should_be_created>
-        git clone git@github.com:YOUR_NAME/pysportbot.git
+        git clone git@github.com:YOUR_NAME/resasports-bot.git
 
 
 | 3. Now we need to install the environment. Navigate into the directory
 
    .. code-block:: bash
 
-       cd pysportbot
+       cd resasports-bot
 
-   If you are using ``pyenv``, select a version to use locally. (See installed versions with ``pyenv versions``)
-
-   .. code-block:: bash
-
-       pyenv local <x.y.z>
-
-   Then, install and activate the environment with:
+   Then, create the virtual environment (``.venv``) and install the pre-commit hooks with:
 
    .. code-block:: bash
 
-        poetry install
-        eval $(poetry env activate)
+        make install
 
-| 4. Install pre-commit to run linters/formatters at commit time:
+   This runs ``uv sync`` followed by ``uv run pre-commit install``. uv will download
+   a suitable Python version if needed. Run commands in the environment with
+   ``uv run <command>``, or activate it with ``source .venv/bin/activate``.
 
-   .. code-block:: bash
-
-        poetry run pre-commit install
-
-| 5. Create a branch for local development:
+| 4. Create a branch for local development:
 
    .. code-block:: bash
 
@@ -104,32 +95,30 @@ development. Please note this documentation assumes you already have
    Now you can make your changes locally.
 
 
-| 6. Don't forget to add test cases for your added functionality to the ``tests`` directory.
+| 5. Don't forget to add test cases for your added functionality to the ``tests`` directory.
 
-| 7. When you're done making changes, check that your changes pass the formatting tests.
+| 6. When you're done making changes, check that your changes pass the formatting tests.
 
    .. code-block:: bash
 
         make check
 
-| 8. Now, validate that all unit tests are passing:
+| 7. Now, validate that all unit tests are passing:
 
    .. code-block:: bash
 
         make test
 
-| 9. Before raising a pull request you should also run tox. This will run the
-   tests across different versions of Python:
+| 8. Optionally, run the tests against a specific Python version supported by the package:
 
    .. code-block:: bash
 
-        tox
+        uv run --python 3.11 pytest
 
-   This requires you to have multiple versions of python installed.
-   This step is also triggered in the CI/CD pipeline, so you could also choose to skip this
+   The CI pipeline runs the tests on all supported Python versions, so you can also skip this
    step locally.
 
-| 10. Commit your changes and push your branch to GitHub:
+| 9. Commit your changes and push your branch to GitHub:
 
    .. code-block:: bash
 
@@ -137,7 +126,7 @@ development. Please note this documentation assumes you already have
         git commit -m "Your detailed description of your changes."
         git push origin name-of-your-bugfix-or-feature
 
-| 11. Submit a pull request through the GitHub website.
+| 10. Submit a pull request through the GitHub website.
 
 Pull Request Guidelines
 ---------------------------
