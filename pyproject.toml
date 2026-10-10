@@ -36,6 +36,8 @@ docs = [
 
 [tool.uv]
 default-groups = ["dev", "docs"]
+# mkdocstrings 1.0.6 is incompatible with pymdown-extensions 12 (Highlight.__init__ requires `md`)
+constraint-dependencies = ["pymdown-extensions<12"]
 
 [build-system]
 requires = ["hatchling>=1.27"]
