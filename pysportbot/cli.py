@@ -20,7 +20,15 @@ from .exceptions import ConfigError, SportBotError
 from .logging_utils import PACKAGE_LOGGER, _find_handler, configure_logging
 from .models import Slot
 from .service import notify
-from .service.config import ENV_VARS, NOTIFY_ENV_VARS, NOTIFY_ON, WEEKDAYS, load_config
+from .service.config import (
+    ENV_VARS,
+    NOTIFY_ENV_VARS,
+    NOTIFY_ON,
+    WEEKDAYS,
+    NotifySettings,
+    load_config,
+    notify_settings_from_env,
+)
 from .service.service import run_service
 from .sportbot import SportBot, _parse_start
 
@@ -280,14 +288,24 @@ def _cmd_cancel(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _with_notify_on(settings: NotifySettings | None, args: argparse.Namespace) -> NotifySettings | None:
+    if settings is None or args.notify_on is None:
+        return settings
+    return replace(settings, on=args.notify_on)
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
-    config = load_config(args.config)
-    notify_settings = config.notify
-    if args.notify_on is not None:
-        if notify_settings is None:
-            logger.warning(f"--notify-on has no effect: set {NOTIFY_ENV_VARS['notify_url']} to get notifications.")
-        else:
-            notify_settings = replace(notify_settings, on=args.notify_on)
+    try:
+        config = load_config(args.config)
+    except ConfigError as e:
+        # Without a config, only the env can say where to send the notification
+        settings_from_env = _with_notify_on(notify_settings_from_env(), args)
+        if settings_from_env is not None:
+            notify.send(settings_from_env, error=e, dry_run=args.dry_run)
+        raise
+    if args.notify_on is not None and config.notify is None:
+        logger.warning(f"--notify-on has no effect: set {NOTIFY_ENV_VARS['notify_url']} to get notifications.")
+    notify_settings = _with_notify_on(config.notify, args)
 
     try:
         results = run_service(

@@ -11,7 +11,13 @@ from pysportbot.cli import main
 from pysportbot.endpoints import Endpoints
 from pysportbot.exceptions import AuthenticationError, ConfigError
 from pysportbot.service import notify
-from pysportbot.service.config import NOTIFY_LANGUAGES, ClassSpec, NotifySettings, ServiceConfig
+from pysportbot.service.config import (
+    NOTIFY_LANGUAGES,
+    ClassSpec,
+    NotifySettings,
+    ServiceConfig,
+    notify_settings_from_env,
+)
 from pysportbot.service.results import BookingResult, BookingStatus
 
 # A secret topic: tests check that it never shows up in the logs or error messages
@@ -151,6 +157,51 @@ def test_format_summary_dry_run_languages(language, title):
     assert notify.format_summary([YOGA_DRY_RUN], dry_run=True, language=language)[0] == title
 
 
+def _result(activity, status=BookingStatus.BOOKED, error=None):
+    return BookingResult(
+        ClassSpec(activity, 0, time(18)), datetime(2026, 1, 12, 18, tzinfo=TZ), status, attempts=1, error=error
+    )
+
+
+def test_long_summary_fits_one_message_with_failures_first():
+    results = [_result(f"Class {i:03} " + "x" * 40) for i in range(100)]
+    results[70] = _result("Late failure", BookingStatus.FULL)
+
+    title, body = notify.format_summary(results)
+
+    lines = body.splitlines()
+    assert len(body.encode("utf-8")) <= notify.MAX_MESSAGE_BYTES
+    assert title == "pysportbot: 99/100 booked"
+    assert lines[0] == "❌ Late failure · Mon 2026-01-12 18:00 · full"
+    assert lines[1].startswith("✅ Class 000 ")
+    kept = len(lines) - 1
+    assert lines[-1] == f"… and {100 - kept} more"
+
+
+def test_long_summary_more_line_in_language():
+    results = [_result(f"Class {i:03} " + "x" * 40) for i in range(100)]
+
+    _, body = notify.format_summary(results, language="it")
+
+    assert body.splitlines()[-1].startswith("… e altre ")
+
+
+def test_long_error_is_truncated():
+    _, body = notify.format_summary([_result("Yoga", BookingStatus.FAILED, error="é" * 5000)])
+
+    assert len(body.encode("utf-8")) <= notify.MAX_LINE_BYTES
+    assert body.startswith("❌ Yoga · Mon 2026-01-12 18:00 · failed: éé")
+    assert body.endswith("é…")
+
+
+def test_send_truncates_long_fatal_error(ntfy):
+    notify.send(ALWAYS, error=ConfigError("x" * 10_000))
+
+    [request] = _notifications(ntfy)
+    assert len(request.body) == notify.MAX_MESSAGE_BYTES
+    assert _body(request).endswith("x…")
+
+
 @pytest.mark.parametrize("language", NOTIFY_LANGUAGES)
 def test_every_language_is_complete(language):
     texts = notify.TEXTS[language]
@@ -237,6 +288,25 @@ def test_send_error_title_in_language(ntfy):
 
 
 @pytest.mark.parametrize(
+    "response",
+    [
+        pytest.param({"body": "<html>Log in</html>", "content_type": "text/html"}, id="html"),
+        pytest.param({"json": {"ok": True}}, id="json-without-id"),
+        pytest.param({"json": ["id"]}, id="json-list"),
+    ],
+)
+def test_send_warns_if_response_is_not_from_ntfy(response, pysportbot_caplog):
+    with responses.RequestsMock() as rsps:
+        rsps.add(responses.POST, URL, **response)
+        notify.send(ALWAYS, [YOGA])
+
+    [record] = [r for r in pysportbot_caplog.records if r.name == "pysportbot.service.notify"]
+    assert record.levelname == "WARNING"
+    assert record.getMessage().startswith("The notification URL answered HTTP 200, but not like an ntfy server.")
+    assert "s3cret" not in pysportbot_caplog.text
+
+
+@pytest.mark.parametrize(
     ("response", "logged"),
     [
         pytest.param({"status": 500}, "HTTP 500", id="http-500"),
@@ -310,6 +380,9 @@ def test_http_allowed_for_localhost(url):
         "ntfy.example/s3cret-topic",
         "ftp://ntfy.example/s3cret-topic",
         "https:///s3cret-topic",
+        "https://ntfy.example",
+        "https://ntfy.example/",
+        "https://ntfy.example/s3cret-topic#fragment",
         "https://[s3cret-topic",
         "",
         42,
@@ -318,14 +391,14 @@ def test_http_allowed_for_localhost(url):
 def test_invalid_notify_url(url):
     message = config_error({"notify_url": url})
 
-    assert "notify_url: must be an https:// URL" in message
+    assert "notify_url: must be the https:// URL of an ntfy topic" in message
     assert "s3cret" not in message
 
 
 def test_invalid_notify_url_from_env():
     message = config_error({}, {"SPORTBOT_NOTIFY_URL": "http://ntfy.example/s3cret-topic"})
 
-    assert "notify_url: must be an https:// URL" in message
+    assert "notify_url: must be the https:// URL of an ntfy topic" in message
     assert "s3cret" not in message
 
 
@@ -347,6 +420,21 @@ def test_invalid_notify_language(language):
     message = config_error({"notify_url": URL, "notify_language": language})
 
     assert f"notify_language: invalid value {language!r}. Use one of: en, de, es, fr, it." in message
+
+
+def test_notify_url_with_credentials_and_query():
+    url = "https://user:s3cret@ntfy.example/topic?auth=abc"
+
+    assert parse({"notify_url": url}).notify == NotifySettings(url=url)
+
+
+def test_notify_settings_from_env():
+    env = {"SPORTBOT_NOTIFY_URL": URL, "SPORTBOT_NOTIFY_ON": "failure", "SPORTBOT_NOTIFY_LANGUAGE": "it"}
+
+    assert notify_settings_from_env(env) == NotifySettings(url=URL, on="failure", language="it")
+    assert notify_settings_from_env({}) is None
+    assert notify_settings_from_env({"SPORTBOT_NOTIFY_URL": "https://ntfy.example"}) is None
+    assert notify_settings_from_env({"SPORTBOT_NOTIFY_URL": URL, "SPORTBOT_NOTIFY_LANGUAGE": "pt"}) is None
 
 
 def test_notify_url_not_in_repr():
@@ -463,8 +551,32 @@ class TestRun:
         assert "No activity found with the name 'Zumba'" in _body(request)
         assert "No activity found with the name 'Zumba'" in capsys.readouterr().err
 
-    def test_invalid_config_sends_nothing(self, mocked_api, notify_url, config_path):
+    def test_invalid_config_sends_error_to_url_from_env(self, mocked_api, notify_url, config_path, capsys):
         config_path.write_text(json.dumps({"classes": []}))
+
+        assert _run(config_path, "--notify-on", "failure") == 2
+
+        [request] = _notifications(mocked_api)
+        assert len(mocked_api.calls) == 1
+        assert request.headers["Title"] == "pysportbot: run failed"
+        assert "classes: must be a non-empty list of classes." in _body(request)
+        assert "classes: must be a non-empty list of classes." in capsys.readouterr().err
+
+    def test_missing_config_file_sends_error_to_url_from_env(self, mocked_api, notify_url, tmp_path):
+        assert _run(tmp_path / "missing.json") == 2
+
+        [request] = _notifications(mocked_api)
+        assert "Cannot read config file" in _body(request)
+
+    def test_invalid_config_with_url_only_in_file_sends_nothing(self, mocked_api, config_path):
+        config_path.write_text(json.dumps({"classes": [], "notify_url": URL}))
+
+        assert _run(config_path) == 2
+
+        assert len(mocked_api.calls) == 0
+
+    def test_invalid_notify_env_var_sends_nothing(self, mocked_api, notify_url, monkeypatch, config_path):
+        monkeypatch.setenv("SPORTBOT_NOTIFY_ON", "never")
 
         assert _run(config_path) == 2
 

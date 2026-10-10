@@ -145,6 +145,19 @@ def load_config(path: str | Path, env: Mapping[str, str] = os.environ) -> Servic
     return ServiceConfig.from_mapping(data, env)
 
 
+def notify_settings_from_env(env: Mapping[str, str] = os.environ) -> NotifySettings | None:
+    """
+    Read the notification settings from the SPORTBOT_NOTIFY_* env vars alone, e.g. to report a config file that
+    cannot be loaded.
+
+    Returns:
+        NotifySettings | None: The settings, or None if SPORTBOT_NOTIFY_URL is unset or a setting is invalid.
+    """
+    errors: list[str] = []
+    settings = _notify({}, env, errors)
+    return None if errors else settings
+
+
 def validate_activities(bot: SportBot, config: ServiceConfig) -> None:
     """
     Validate that all activities in the configuration exist.
@@ -204,7 +217,10 @@ def _notify(data: Mapping[str, Any], env: Mapping[str, str], errors: list[str]) 
         return None
     # Never echo the URL: an ntfy topic URL works like a password
     if not isinstance(url, str) or not _is_notify_url(url.strip()):
-        errors.append("notify_url: must be an https:// URL, or http:// for localhost, e.g. 'https://ntfy.sh/<topic>'.")
+        errors.append(
+            "notify_url: must be the https:// URL of an ntfy topic, e.g. 'https://ntfy.sh/<topic>', without a "
+            "'#' fragment. http:// is allowed only for localhost."
+        )
         return None
     return NotifySettings(
         url=url.strip(),
@@ -219,7 +235,8 @@ def _is_notify_url(url: str) -> bool:
         host = parts.hostname
     except ValueError:
         return False
-    if not host:
+    # The path is the topic. A fragment never reaches the server, so it is probably a mistake
+    if not host or not parts.path.strip("/") or parts.fragment:
         return False
     return parts.scheme == "https" or (parts.scheme == "http" and host in LOCALHOST_NAMES)
 

@@ -13,6 +13,12 @@ from .results import BookingResult, BookingStatus, format_time
 logger = logging.getLogger(__name__)
 
 TIMEOUT = 10  # seconds
+# ntfy delivers a longer message as an attachment, which the notification does not show
+MAX_MESSAGE_BYTES = 4096
+# So that a long error message cannot crowd out the other classes
+MAX_LINE_BYTES = 1024
+# Room for the line that counts the classes left out
+_MORE_LINE_BYTES = 64
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +30,7 @@ class _Texts:
     run_failed: str  # Title of a run that failed before booking
     dry_run: str  # Title prefix of a dry run
     attempts: str  # e.g. "3 attempts", only shown for more than one
+    more: str  # Last line of a message too long for ntfy, e.g. "… and 3 more"
     weekdays: tuple[str, ...]  # Abbreviations, Monday first
     date_format: str
     statuses: Mapping[BookingStatus, str]
@@ -36,6 +43,7 @@ TEXTS: dict[NotifyLanguage, _Texts] = {
         run_failed="run failed",
         dry_run="dry run",
         attempts="{n} attempts",
+        more="… and {n} more",
         weekdays=("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
         date_format="%Y-%m-%d",
         statuses={status: str(status) for status in BookingStatus},
@@ -46,6 +54,7 @@ TEXTS: dict[NotifyLanguage, _Texts] = {
         run_failed="Lauf fehlgeschlagen",
         dry_run="Testlauf",
         attempts="{n} Versuche",
+        more="… und {n} weitere",
         weekdays=("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"),
         date_format="%d.%m.%Y",
         statuses={
@@ -63,6 +72,7 @@ TEXTS: dict[NotifyLanguage, _Texts] = {
         run_failed="ejecución fallida",
         dry_run="simulación",
         attempts="{n} intentos",
+        more="… y {n} más",
         weekdays=("lun", "mar", "mié", "jue", "vie", "sáb", "dom"),
         date_format="%d/%m/%Y",
         statuses={
@@ -80,6 +90,7 @@ TEXTS: dict[NotifyLanguage, _Texts] = {
         run_failed="échec de l'exécution",
         dry_run="simulation",
         attempts="{n} tentatives",
+        more="… et {n} autres",
         weekdays=("lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."),
         date_format="%d/%m/%Y",
         statuses={
@@ -97,6 +108,7 @@ TEXTS: dict[NotifyLanguage, _Texts] = {
         run_failed="esecuzione non riuscita",
         dry_run="simulazione",
         attempts="{n} tentativi",
+        more="… e altre {n}",
         weekdays=("lun", "mar", "mer", "gio", "ven", "sab", "dom"),
         date_format="%d/%m/%Y",
         statuses={
@@ -126,7 +138,7 @@ def format_summary(
     texts = TEXTS[language]
     ok = sum(r.ok for r in results)
     title = _title(f"{ok}/{len(results)} {texts.bookable if dry_run else texts.booked}", texts, dry_run)
-    return title, "\n".join(_describe(r, texts) for r in results)
+    return title, _join([(r.ok, _describe(r, texts)) for r in results], texts)
 
 
 def send(
@@ -147,7 +159,8 @@ def send(
         return
     if error is not None:
         texts = TEXTS[settings.language]
-        title, body = _title(texts.run_failed, texts, dry_run), str(error) or type(error).__name__
+        title = _title(texts.run_failed, texts, dry_run)
+        body = _truncate(str(error) or type(error).__name__, MAX_MESSAGE_BYTES)
     else:
         title, body = format_summary(results or (), dry_run=dry_run, language=settings.language)
 
@@ -166,7 +179,23 @@ def send(
     if not response.ok:
         logger.warning(f"Could not send the notification: HTTP {response.status_code}.")
         return
+    # E.g. a proxy's login page: still a warning, so a wrong URL does not look like a sent notification
+    if not _is_ntfy_response(response):
+        logger.warning(
+            f"The notification URL answered HTTP {response.status_code}, but not like an ntfy server. Check that it "
+            "is the URL of an ntfy topic."
+        )
+        return
     logger.info("Notification sent.")
+
+
+def _is_ntfy_response(response: requests.Response) -> bool:
+    """Whether the response is ntfy's JSON description of the published message, which has its ID."""
+    try:
+        data = response.json()
+    except ValueError:
+        return False
+    return isinstance(data, dict) and "id" in data
 
 
 def _header(value: str) -> str:
@@ -174,6 +203,31 @@ def _header(value: str) -> str:
     if value.isascii():
         return value
     return f"=?UTF-8?B?{base64.b64encode(value.encode('utf-8')).decode('ascii')}?="
+
+
+def _truncate(text: str, max_bytes: int) -> str:
+    """Shorten the text to at most `max_bytes` UTF-8 bytes, ending with "…" if shortened."""
+    data = text.encode("utf-8")
+    if len(data) <= max_bytes:
+        return text
+    return data[: max_bytes - len("…".encode())].decode("utf-8", errors="ignore") + "…"
+
+
+def _join(lines: Sequence[tuple[bool, str]], texts: _Texts) -> str:
+    """Join the (ok, line) pairs, keeping the failures and as many other lines as fit into one ntfy message."""
+    body = "\n".join(line for _, line in lines)
+    if len(body.encode("utf-8")) <= MAX_MESSAGE_BYTES:
+        return body
+
+    kept: list[str] = []
+    size = _MORE_LINE_BYTES
+    # Failures first, otherwise in order: they are what the notification is for
+    for _, line in sorted(lines, key=lambda pair: pair[0]):
+        size += len(line.encode("utf-8")) + 1
+        if size > MAX_MESSAGE_BYTES:
+            break
+        kept.append(line)
+    return "\n".join([*kept, texts.more.format(n=len(lines) - len(kept))])
 
 
 def _title(text: str, texts: _Texts, dry_run: bool) -> str:
@@ -188,4 +242,4 @@ def _describe(result: BookingResult, texts: _Texts) -> str:
         outcome += f" ({texts.attempts.format(n=result.attempts)})"
     if result.status is BookingStatus.FAILED and result.error:
         outcome += f": {result.error}"
-    return f"{'✅' if result.ok else '❌'} {result.spec.activity} · {when} · {outcome}"
+    return _truncate(f"{'✅' if result.ok else '❌'} {result.spec.activity} · {when} · {outcome}", MAX_LINE_BYTES)
