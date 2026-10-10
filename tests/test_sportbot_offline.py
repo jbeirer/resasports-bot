@@ -1,9 +1,11 @@
+import json
 from urllib.parse import parse_qs
 
 import pytest
 import responses
 
 from pysportbot import (
+    APIError,
     AuthenticationError,
     CancellationError,
     NotLoggedInError,
@@ -115,6 +117,19 @@ def test_failed_relogin_clears_activities(offline_bot, mocked_api, centre_slug):
         offline_bot.activities()
 
 
+def test_activities_failure_after_authentication_logs_out(mocked_api, centre_slug):
+    """If authentication succeeds but fetching activities fails, no authenticated state is left behind."""
+    mocked_api.replace(responses.POST, str(Endpoints.SLOTS), status=500)
+    bot = SportBot()
+
+    with pytest.raises(APIError):
+        bot.login("user@example.com", "password", centre_slug)
+
+    assert bot.is_logged_in() is False
+    assert bot._authenticator.authenticated is False
+    assert bot._client._bearer is None
+
+
 def test_login_failure_resets_state(mocked_api, centre_slug):
     mocked_api.replace(responses.POST, str(Endpoints.USER_LOGIN), status=401)
     bot = SportBot()
@@ -149,3 +164,85 @@ def test_requires_activities_loaded(mocked_api, call):
 
     with pytest.raises(NotLoggedInError):
         call(bot)
+
+
+def test_ensure_logged_in_keeps_valid_session(offline_bot, mocked_api):
+    logins = len(_calls_to(mocked_api, Endpoints.USER_LOGIN))
+
+    offline_bot.ensure_logged_in()
+
+    assert len(_calls_to(mocked_api, Endpoints.USER_LOGIN)) == logins
+    assert offline_bot.is_logged_in() is True
+
+
+def test_ensure_logged_in_relogs_once_when_session_expired(offline_bot, mocked_api, payloads):
+    logins = len(_calls_to(mocked_api, Endpoints.USER_LOGIN))
+    # The session probe is rejected; the user request of the re-login then succeeds
+    mocked_api.replace(responses.POST, str(Endpoints.USER), status=401)
+    mocked_api.add(responses.POST, str(Endpoints.USER), json=payloads["user"])
+
+    offline_bot.ensure_logged_in()
+
+    login_calls = _calls_to(mocked_api, Endpoints.USER_LOGIN)
+    assert len(login_calls) == logins + 1
+    assert json.loads(login_calls[-1].request.body) == {"username": "user@example.com", "password": "password"}
+    assert offline_bot.is_logged_in() is True
+
+
+def test_ensure_logged_in_relogin_skips_activities_fetch(offline_bot, mocked_api, payloads):
+    """Re-login right before a booking must not wait for the slow activities request."""
+    slots_calls = len(_calls_to(mocked_api, Endpoints.SLOTS))
+    mocked_api.replace(responses.POST, str(Endpoints.USER), status=401)
+    mocked_api.add(responses.POST, str(Endpoints.USER), json=payloads["user"])
+
+    offline_bot.ensure_logged_in()
+
+    assert len(_calls_to(mocked_api, Endpoints.SLOTS)) == slots_calls
+    assert len(offline_bot.activities()) > 0
+
+
+def test_ensure_logged_in_failed_relogin_logs_out(offline_bot, mocked_api):
+    mocked_api.replace(responses.POST, str(Endpoints.USER), status=401)
+    mocked_api.replace(responses.POST, str(Endpoints.USER_LOGIN), status=500)
+
+    with pytest.raises(AuthenticationError):
+        offline_bot.ensure_logged_in()
+
+    assert offline_bot.is_logged_in() is False
+    assert offline_bot._client._bearer is None
+    with pytest.raises(NotLoggedInError):
+        offline_bot.activities()
+
+
+def test_ensure_logged_in_after_failed_relogin_does_full_login(offline_bot, mocked_api, payloads):
+    mocked_api.replace(responses.POST, str(Endpoints.USER), status=401)
+    mocked_api.replace(responses.POST, str(Endpoints.USER_LOGIN), status=500)
+    with pytest.raises(AuthenticationError):
+        offline_bot.ensure_logged_in()
+    mocked_api.replace(responses.POST, str(Endpoints.USER), json=payloads["user"])
+    mocked_api.replace(responses.POST, str(Endpoints.USER_LOGIN), json=payloads["user_login"])
+    slots_calls = len(_calls_to(mocked_api, Endpoints.SLOTS))
+
+    offline_bot.ensure_logged_in()
+
+    assert offline_bot.is_logged_in() is True
+    assert len(_calls_to(mocked_api, Endpoints.SLOTS)) == slots_calls + 1
+
+
+def test_ensure_logged_in_requires_login(mocked_api):
+    bot = SportBot()
+
+    with pytest.raises(NotLoggedInError):
+        bot.ensure_logged_in()
+
+    assert _calls_to(mocked_api, Endpoints.USER_LOGIN) == []
+
+
+def test_ensure_logged_in_requires_successful_login(mocked_api, centre_slug):
+    mocked_api.replace(responses.POST, str(Endpoints.USER_LOGIN), status=401)
+    bot = SportBot()
+    with pytest.raises(AuthenticationError):
+        bot.login("user@example.com", "wrong-password", centre_slug)
+
+    with pytest.raises(NotLoggedInError):
+        bot.ensure_logged_in()

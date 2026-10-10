@@ -1,12 +1,14 @@
 import json
 import logging
 from datetime import date, datetime, timedelta
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 from pandas import DataFrame
 
 from .authenticator import Authenticator
+from .client import ApiClient
 from .endpoints import Endpoints
 from .exceptions import ActivityNotFoundError, APIError
 
@@ -19,19 +21,39 @@ SLOTS_READ_TIMEOUT = 120
 class Activities:
     """Handles activity fetching and slot management."""
 
-    def __init__(self, authenticator: Authenticator, *, time_zone: str = "Europe/Madrid") -> None:
+    def __init__(self, client: ApiClient, auth: Authenticator, *, time_zone: str = "Europe/Madrid") -> None:
         """Initialize the Activities class."""
-        # Session
-        self.session = authenticator.session
-        # Nubapp credentials
-        self.creds = authenticator.creds
-        # Headers for requests
-        self.headers = authenticator.headers
-        # (connect, read) timeout for requests, with a longer read timeout for the slow SLOTS endpoint
-        connect_timeout, _ = authenticator.timeout
-        self.timeout = (connect_timeout, SLOTS_READ_TIMEOUT)
+        self.client = client
+        # Provides id_user and id_application for every request
+        self.auth = auth
         # Time zone used to determine "today"
         self.time_zone = time_zone
+
+    def _calendar(self, start: str, end: str, **extra: Any) -> list[dict[str, Any]]:
+        """
+        Fetch the activities calendar between two 'YYYY-MM-DD' days, both inclusive.
+
+        Raises:
+            APIError: If the request fails or the response has no activities calendar.
+        """
+        payload = {
+            "id_application": self.auth.id_application,
+            "id_user": self.auth.id_user,
+            "start_timestamp": start,
+            "end_timestamp": end,
+            **extra,
+        }
+        # Keep the client's connect timeout, with a longer read timeout for the slow SLOTS endpoint
+        timeout = (self.client.timeout[0], SLOTS_READ_TIMEOUT)
+        data = self.client.post_json(Endpoints.SLOTS, data=payload, timeout=timeout)
+        try:
+            calendar: list[dict[str, Any]] = data["data"]["activities_calendar"]
+        except (KeyError, TypeError) as err:
+            logger.error(f"Missing expected key in response: {err}")
+            raise APIError(
+                f"Missing expected key in response: {err}", endpoint=Endpoints.SLOTS, body=json.dumps(data)
+            ) from err
+        return calendar
 
     def fetch(self, days_ahead: int = 7) -> DataFrame:
         """
@@ -51,71 +73,21 @@ class Activities:
 
         # Date range in the configured time zone; the API expects plain 'YYYY-MM-DD' dates
         today = datetime.now(ZoneInfo(self.time_zone)).date()
+        activities = self._calendar(today.isoformat(), (today + timedelta(days=days_ahead)).isoformat())
 
-        # Prepare payload for SLOTS endpoint
-        payload = {
-            "id_application": self.creds.get("id_application"),
-            "id_user": self.creds.get("id_user"),
-            "start_timestamp": today.isoformat(),
-            "end_timestamp": (today + timedelta(days=days_ahead)).isoformat(),
-        }
-        # Make request to SLOTS endpoint
-        response = self.session.post(Endpoints.SLOTS, headers=self.headers, data=payload, timeout=self.timeout)
-
-        if response.status_code != 200:
-            logger.error(f"Failed to fetch activities from slots. Status Code: {response.status_code}")
-            raise APIError(
-                "Failed to fetch activities from slots",
-                endpoint=Endpoints.SLOTS,
-                status_code=response.status_code,
-                body=response.text,
-            )
+        if not activities:
+            logger.warning("No activities found in the response.")
+            return pd.DataFrame(columns=["id_activity", "name_activity", "id_category_activity"])
 
         try:
-            data = json.loads(response.content.decode("utf-8"))
-            activities = data["data"]["activities_calendar"]
-
-            if not activities:
-                logger.warning("No activities found in the response.")
-                return pd.DataFrame(columns=["id_activity", "name_activity", "id_category_activity"])
-
-            # Create DataFrame from activities
-            df_activities = pd.DataFrame(activities)
-
-            # Drop duplicates based on 'id_activity' and keep first occurrence
-            df_activities = df_activities.drop_duplicates(subset=["id_activity"])
-
-            # Select only required columns and reset index
+            # Keep the first occurrence of each activity, and only the required columns
+            df_activities = pd.DataFrame(activities).drop_duplicates(subset=["id_activity"])
             df_activities = df_activities[["id_activity", "name_activity", "id_category_activity"]].reset_index(
                 drop=True
             )
-
-        except json.JSONDecodeError as err:
-            logger.error("Invalid JSON response while fetching activities from slots.")
-            logger.error(f"Raw response: {response.content.decode('utf-8')}")
-            raise APIError(
-                "Invalid JSON response while fetching activities from slots",
-                endpoint=Endpoints.SLOTS,
-                status_code=response.status_code,
-                body=response.text,
-            ) from err
-        except KeyError as err:
-            logger.error(f"Missing expected key in response: {err}")
-            logger.error(f"Raw response: {response.content.decode('utf-8')}")
-            raise APIError(
-                f"Missing expected key in response: {err}",
-                endpoint=Endpoints.SLOTS,
-                status_code=response.status_code,
-                body=response.text,
-            ) from err
         except Exception as err:
             logger.error(f"Unexpected error while parsing activities: {err}")
-            raise APIError(
-                f"Unexpected error while parsing activities: {err}",
-                endpoint=Endpoints.SLOTS,
-                status_code=response.status_code,
-                body=response.text,
-            ) from err
+            raise APIError(f"Unexpected error while parsing activities: {err}", endpoint=Endpoints.SLOTS) from err
 
         logger.info(f"Successfully fetched {len(df_activities)} unique activities.")
         return df_activities
@@ -157,43 +129,7 @@ class Activities:
         id_category_activity = activity["id_category_activity"]
 
         # Fetch slots; the API takes the same 'YYYY-MM-DD' day as start and end
-        payload = {
-            "id_application": self.creds["id_application"],
-            "id_user": self.creds["id_user"],
-            "start_timestamp": day,
-            "end_timestamp": day,
-            "id_category_activity": id_category_activity,
-        }
-        response = self.session.post(Endpoints.SLOTS, headers=self.headers, data=payload, timeout=self.timeout)
-
-        if response.status_code != 200:
-            logger.error(f"Failed to fetch slots. Status Code: {response.status_code}")
-            raise APIError(
-                "Failed to fetch slots",
-                endpoint=Endpoints.SLOTS,
-                status_code=response.status_code,
-                body=response.text,
-            )
-
-        try:
-            data = json.loads(response.content.decode("utf-8"))
-            slots = data["data"]["activities_calendar"]
-        except json.JSONDecodeError as err:
-            logger.error("Invalid JSON response while fetching slots.")
-            raise APIError(
-                "Invalid JSON response while fetching slots",
-                endpoint=Endpoints.SLOTS,
-                status_code=response.status_code,
-                body=response.text,
-            ) from err
-        except KeyError as err:
-            logger.error(f"Missing expected key in response: {err}")
-            raise APIError(
-                f"Missing expected key in response: {err}",
-                endpoint=Endpoints.SLOTS,
-                status_code=response.status_code,
-                body=response.text,
-            ) from err
+        slots = self._calendar(day, day, id_category_activity=id_category_activity)
 
         if not slots:
             logger.warning(f"No slots available for activity '{activity_name}' on {day}.")

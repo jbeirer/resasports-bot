@@ -6,6 +6,7 @@ import responses
 
 from pysportbot.authenticator import Authenticator
 from pysportbot.bookings import Bookings
+from pysportbot.client import ApiClient
 from pysportbot.endpoints import Endpoints
 from pysportbot.exceptions import (
     APIError,
@@ -15,16 +16,16 @@ from pysportbot.exceptions import (
     SlotNotBookableYetError,
     SlotUnavailableError,
 )
-from pysportbot.session import Session
 
 SLOT_ID = "5001"
 
 
 @pytest.fixture
 def bookings(mocked_api) -> Bookings:
-    auth = Authenticator(Session(), "test-centre")
+    client = ApiClient()
+    auth = Authenticator(client)
     auth.login("user@example.com", "password")
-    return Bookings(auth)
+    return Bookings(client, auth)
 
 
 def _calls_to(mocked_api, endpoint):
@@ -100,8 +101,8 @@ def test_cancel_failure_raises(bookings, mocked_api):
 
 
 @pytest.mark.parametrize("method", ["book", "cancel"])
-def test_requests_use_authenticator_timeout(bookings, method):
-    with patch.object(bookings.session, "post", wraps=bookings.session.post) as post:
+def test_requests_use_client_timeout(bookings, method):
+    with patch.object(bookings.client.session, "request", wraps=bookings.client.session.request) as post:
         getattr(bookings, method)(SLOT_ID)
 
     assert post.call_args.kwargs["timeout"] == (5, 10)
@@ -114,22 +115,23 @@ def test_requests_use_authenticator_timeout(bookings, method):
         pytest.param("cancel", Endpoints.CANCELLATION, id="cancel"),
     ],
 )
+# Content errors found after a 2xx response carry no status code
 @pytest.mark.parametrize(
-    "response_kwargs",
+    ("response_kwargs", "status_code"),
     [
-        pytest.param({"status": 500, "body": "<html>Internal Server Error</html>"}, id="non-200"),
-        pytest.param({"body": "not json"}, id="invalid-json"),
-        pytest.param({"json": {"error": 5}}, id="missing-success"),
-        pytest.param({"json": {"success": "false"}}, id="string-success"),
-        pytest.param({"json": {"success": 1}}, id="int-success"),
-        pytest.param({"json": [{"success": True}]}, id="non-object"),
+        pytest.param({"status": 500, "body": "<html>Internal Server Error</html>"}, 500, id="non-200"),
+        pytest.param({"body": "not json"}, 200, id="invalid-json"),
+        pytest.param({"json": [{"success": True}]}, 200, id="non-object"),
+        pytest.param({"json": {"error": 5}}, None, id="missing-success"),
+        pytest.param({"json": {"success": "false"}}, None, id="string-success"),
+        pytest.param({"json": {"success": 1}}, None, id="int-success"),
     ],
 )
-def test_bad_response_raises_api_error(bookings, mocked_api, method, endpoint, response_kwargs):
+def test_bad_response_raises_api_error(bookings, mocked_api, method, endpoint, response_kwargs, status_code):
     mocked_api.replace(responses.POST, str(endpoint), **response_kwargs)
 
     with pytest.raises(APIError) as exc_info:
         getattr(bookings, method)(SLOT_ID)
 
     assert exc_info.value.endpoint == str(endpoint)
-    assert exc_info.value.status_code == response_kwargs.get("status", 200)
+    assert exc_info.value.status_code == status_code
