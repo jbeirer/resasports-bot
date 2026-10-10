@@ -1,9 +1,12 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from unittest.mock import patch
 from urllib.parse import parse_qs
 
 import pytest
+import pytz
 import responses
 
+from pysportbot import SportBot
 from pysportbot.activities import Activities
 from pysportbot.authenticator import Authenticator
 from pysportbot.endpoints import Endpoints
@@ -12,6 +15,13 @@ from pysportbot.session import Session
 ACTIVITY_COLUMNS = ["id_activity", "name_activity", "id_category_activity"]
 DAY = "2030-01-04"
 EMPTY_CALENDAR = {"data": {"activities_calendar": []}}
+# 00:30 on 2030-01-04 in Madrid, but still 2030-01-03 in UTC
+FROZEN_UTC = datetime(2030, 1, 3, 23, 30, tzinfo=pytz.utc)
+
+
+def _frozen_now(tz=None):
+    """`datetime.now` on a machine whose local clock is UTC, frozen at FROZEN_UTC."""
+    return FROZEN_UTC.astimezone(tz) if tz else FROZEN_UTC.replace(tzinfo=None)
 
 
 @pytest.fixture
@@ -140,3 +150,45 @@ def test_daily_slots_no_matching_activity(activities, mocked_api, payloads):
     df = activities.daily_slots(df_activities, "Yoga", DAY)
 
     assert df.empty
+
+
+@pytest.mark.parametrize(
+    ("time_zone", "expected_start"),
+    [
+        ("Europe/Madrid", "2030-01-04"),
+        ("America/New_York", "2030-01-03"),
+    ],
+)
+def test_fetch_window_uses_configured_time_zone(mocked_api, time_zone, expected_start):
+    auth = Authenticator(Session(), "test-centre")
+    auth.login("user@example.com", "password")
+    activities = Activities(auth, time_zone=time_zone)
+
+    with patch("pysportbot.activities.datetime", wraps=datetime) as mock_datetime:
+        mock_datetime.now.side_effect = _frozen_now
+        activities.fetch()
+
+    body = parse_qs(_slots_calls(mocked_api)[-1].request.body)
+    assert body["start_timestamp"] == [expected_start]
+
+
+def test_sportbot_passes_time_zone_to_activities(mocked_api, centre_slug):
+    bot = SportBot(time_zone="Europe/Madrid")
+
+    with patch("pysportbot.activities.datetime", wraps=datetime) as mock_datetime:
+        mock_datetime.now.side_effect = _frozen_now
+        bot.login("user@example.com", "password", centre_slug)
+
+    body = parse_qs(_slots_calls(mocked_api)[-1].request.body)
+    assert body["start_timestamp"] == ["2030-01-04"]
+
+
+@pytest.mark.parametrize("method", ["fetch", "daily_slots"])
+def test_requests_use_authenticator_timeout(activities, method):
+    df_activities = activities.fetch()
+    args = (df_activities, "Yoga", DAY) if method == "daily_slots" else ()
+
+    with patch.object(activities.session, "post", wraps=activities.session.post) as post:
+        getattr(activities, method)(*args)
+
+    assert post.call_args.kwargs["timeout"] == (5, 10)

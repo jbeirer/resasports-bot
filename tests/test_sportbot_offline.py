@@ -13,8 +13,6 @@ FULL_SLOT = f"{DAY} 10:00:00"  # Gimnasio, n_inscribed == n_capacity
 OPEN_SLOT = f"{DAY} 12:00:00"  # Gimnasio, places left
 OPEN_SLOT_ID = "5004"
 
-SWALLOWED_ERRORS = "SportBot.book/cancel swallow booking errors; fixed in PR-03"
-
 
 def _calls_to(mocked_api, endpoint):
     return [c for c in mocked_api.calls if c.request.url == str(endpoint)]
@@ -50,15 +48,21 @@ def test_book_success_sends_one_request(offline_bot, mocked_api):
     assert parse_qs(calls[0].request.body)["id_activity_calendar"] == [OPEN_SLOT_ID]
 
 
-@pytest.mark.xfail(strict=True, reason=SWALLOWED_ERRORS)
-def test_book_propagates_api_error(offline_bot, mocked_api):
-    mocked_api.replace(responses.POST, str(Endpoints.BOOKING), json={"success": False, "error": 28})
+@pytest.mark.parametrize(
+    ("error_code", "message"),
+    [
+        (5, ErrorMessages.slot_already_booked()),
+        (6, ErrorMessages.slot_unavailable()),
+        (28, ErrorMessages.slot_not_bookable_yet()),
+    ],
+)
+def test_book_propagates_api_error(offline_bot, mocked_api, error_code, message):
+    mocked_api.replace(responses.POST, str(Endpoints.BOOKING), json={"success": False, "error": error_code})
 
-    with pytest.raises(ValueError, match=re.escape(ErrorMessages.slot_not_bookable_yet())):
+    with pytest.raises(ValueError, match=re.escape(message)):
         offline_bot.book("Gimnasio", OPEN_SLOT)
 
 
-@pytest.mark.xfail(strict=True, reason=SWALLOWED_ERRORS)
 def test_cancel_propagates_api_error(offline_bot, mocked_api):
     mocked_api.replace(responses.POST, str(Endpoints.CANCELLATION), json={"success": False})
 

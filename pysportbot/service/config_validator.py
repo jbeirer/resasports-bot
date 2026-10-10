@@ -37,15 +37,35 @@ def validate_config(config: dict[str, Any]) -> None:
             if len(day_and_time) != 2:
                 raise_invalid_booking_format_error()
 
-            _, exec_time = day_and_time
+            exec_day, exec_time = day_and_time
             datetime.strptime(exec_time, "%H:%M:%S")
         except ValueError:
             raise_invalid_booking_format_error()
+
+        _validate_day(exec_day)
 
     # Validate individual class definitions
     for cls in config["classes"]:
         if "activity" not in cls or "class_day" not in cls or "class_time" not in cls:
             raise ValueError(ErrorMessages.invalid_class_definition())
+
+        _validate_day(cls["class_day"])
+
+        try:
+            datetime.strptime(cls["class_time"], "%H:%M:%S")
+        except (TypeError, ValueError) as err:
+            raise ValueError(ErrorMessages.invalid_class_time(cls["class_time"])) from err
+
+
+def _validate_day(day: Any) -> None:
+    """
+    Validate a weekday name using the same normalization as the scheduler.
+
+    Raises:
+        ValueError: If the day is not a valid weekday name.
+    """
+    if not isinstance(day, str) or day.lower().strip() not in DAY_MAP:
+        raise ValueError(ErrorMessages.invalid_day(day))
 
 
 def validate_activities(bot: SportBot, config: dict[str, Any]) -> None:

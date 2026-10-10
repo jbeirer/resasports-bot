@@ -1,4 +1,5 @@
 import re
+from unittest.mock import patch
 from urllib.parse import parse_qs
 
 import pytest
@@ -73,3 +74,33 @@ def test_cancel_failure_raises(bookings, mocked_api):
 
     with pytest.raises(ValueError, match=re.escape(ErrorMessages.cancellation_failed())):
         bookings.cancel(SLOT_ID)
+
+
+@pytest.mark.parametrize("method", ["book", "cancel"])
+def test_requests_use_authenticator_timeout(bookings, method):
+    with patch.object(bookings.session, "post", wraps=bookings.session.post) as post:
+        getattr(bookings, method)(SLOT_ID)
+
+    assert post.call_args.kwargs["timeout"] == (5, 10)
+
+
+@pytest.mark.parametrize(
+    ("method", "endpoint", "action"),
+    [
+        pytest.param("book", Endpoints.BOOKING, "booking", id="book"),
+        pytest.param("cancel", Endpoints.CANCELLATION, "cancellation", id="cancel"),
+    ],
+)
+@pytest.mark.parametrize(
+    "response_kwargs",
+    [
+        pytest.param({"status": 500, "body": "<html>Internal Server Error</html>"}, id="non-200"),
+        pytest.param({"body": "not json"}, id="invalid-json"),
+        pytest.param({"json": {"error": 5}}, id="missing-success"),
+    ],
+)
+def test_bad_response_raises_runtime_error(bookings, mocked_api, method, endpoint, action, response_kwargs):
+    mocked_api.replace(responses.POST, str(endpoint), **response_kwargs)
+
+    with pytest.raises(RuntimeError, match=re.escape(ErrorMessages.unknown_error(action))):
+        getattr(bookings, method)(SLOT_ID)

@@ -35,9 +35,9 @@ def attempt_booking(
         retry_delay (int): Delay between retries.
         time_zone (str): Time zone for execution.
     """
-    for attempt_num in range(1, retry_attempts + 1):
-        booking_date = calculate_class_day(class_day, time_zone).strftime("%Y-%m-%d")
+    booking_date = calculate_class_day(class_day, time_zone).strftime("%Y-%m-%d")
 
+    for attempt_num in range(1, retry_attempts + 1):
         try:
             bot.book(activity=activity, start_time=f"{booking_date} {class_time}")
 

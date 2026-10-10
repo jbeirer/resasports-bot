@@ -27,6 +27,15 @@ class ErrorMessages:
         return "Invalid booking_execution format. Use 'now' or 'Day HH:MM:SS'."
 
     @staticmethod
+    def invalid_day(day: str) -> str:
+        valid_days = "Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday"
+        return f"Invalid day '{day}'. Valid days are: {valid_days} (case-insensitive)."
+
+    @staticmethod
+    def invalid_class_time(class_time: str) -> str:
+        return f"Invalid class_time '{class_time}'. Use the 24-hour format 'HH:MM:SS', e.g. '18:00:00'."
+
+    @staticmethod
     def no_matching_slots_for_time(activity: str, class_time: str, booking_date: str) -> str:
         return f"No matching slots available for {activity} at {class_time} on {booking_date}"
 

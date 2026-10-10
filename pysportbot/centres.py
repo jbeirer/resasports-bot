@@ -1,8 +1,5 @@
 # centres.py
 
-import json
-import logging
-
 import pandas as pd
 import requests
 from pandas import DataFrame
@@ -52,6 +49,9 @@ class Centres:
     def fetch_centres(self) -> DataFrame:
         """
         Fetches the info of available centres from Resasports and returns a DataFrame.
+
+        Raises:
+            RuntimeError: If the centres cannot be fetched or the response is malformed or empty.
         """
         try:
             response = requests.post(
@@ -61,28 +61,19 @@ class Centres:
             )
             response.raise_for_status()
 
-            # Parse the JSON content
-            response_json = json.loads(response.content.decode("utf-8"))
             # Flatten and extract the desired columns
-            df = pd.json_normalize(response_json["applications"])
+            df = pd.json_normalize(response.json()["applications"])
             df = df[["slug", "name", "address.town", "address.country", "address.street_line"]]
             df.columns = ["slug", "name", "town", "country", "address"]
+        except Exception as exc:
+            logger.exception(ErrorMessages.failed_fetch("centres"))
+            raise RuntimeError(ErrorMessages.failed_fetch("centres")) from exc
 
-            if df is None or df.empty:
-                logging.error("Failed to fetch centres.")
-                self._raise_fetch_error()  # Fix for TRY301: abstract raise
-            else:
-                return df
+        if df.empty:
+            logger.error(ErrorMessages.failed_fetch("centres"))
+            raise RuntimeError(ErrorMessages.failed_fetch("centres"))
 
-        except Exception:
-            logging.exception("Failed to fetch centres")
-            return pd.DataFrame()
-
-    def _raise_fetch_error(self) -> None:
-        """
-        Helper function to raise a ValueError for failed centre fetches.
-        """
-        raise ValueError("Failed to fetch centres.")
+        return df
 
     def print_centres(self, cols: int = 4, col_width: int = 40) -> None:
         """

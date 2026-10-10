@@ -26,10 +26,21 @@ def run_service(
         retry_delay (int): Delay between retry attempts in minutes.
         time_zone (str): Time zone for the booking.
         log_level (str): Logging level for the service.
+
+    Raises:
+        ValueError: If retry_attempts < 1, retry_delay < 0, booking_delay < 0, or the config is invalid.
     """
     # Initialize logger
     logger = get_logger(__name__)
     logger.setLevel(log_level)
+
+    # Validate service arguments
+    if retry_attempts < 1:
+        raise ValueError(f"retry_attempts must be at least 1, got {retry_attempts}.")
+    if retry_delay < 0:
+        raise ValueError(f"retry_delay must not be negative, got {retry_delay}.")
+    if booking_delay < 0:
+        raise ValueError(f"booking_delay must not be negative, got {booking_delay}.")
 
     # Validate configuration
     validate_config(config)
