@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 import pytz
+import requests
 import responses
 
 from pysportbot.endpoints import Endpoints
@@ -57,6 +58,23 @@ def _attempt(bot, retry_attempts=3, retry_delay=1):
 @pytest.mark.parametrize("error_code", [6, 28])
 def test_attempt_booking_retries_until_success(offline_bot, mocked_api, frozen_class_day, mock_time, error_code):
     mocked_api.replace(responses.POST, str(Endpoints.BOOKING), json={"success": False, "error": error_code})
+    mocked_api.add(responses.POST, str(Endpoints.BOOKING), json={"success": True})
+
+    _attempt(offline_bot)
+
+    assert len(_booking_calls(mocked_api)) == 2
+    mock_time.sleep.assert_called_once_with(1)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(requests.exceptions.ReadTimeout("Read timed out."), id="read-timeout"),
+        pytest.param(requests.exceptions.ConnectionError("Connection reset."), id="connection-error"),
+    ],
+)
+def test_attempt_booking_retries_after_network_error(offline_bot, mocked_api, frozen_class_day, mock_time, error):
+    mocked_api.replace(responses.POST, str(Endpoints.BOOKING), body=error)
     mocked_api.add(responses.POST, str(Endpoints.BOOKING), json={"success": True})
 
     _attempt(offline_bot)

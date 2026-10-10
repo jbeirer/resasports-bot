@@ -63,6 +63,13 @@ def test_book_unknown_error_raises_runtime_error(bookings, mocked_api):
         bookings.book(SLOT_ID)
 
 
+def test_book_failure_without_error_code_raises_runtime_error(bookings, mocked_api):
+    mocked_api.replace(responses.POST, str(Endpoints.BOOKING), json={"success": False})
+
+    with pytest.raises(RuntimeError, match=re.escape(ErrorMessages.unknown_error("booking"))):
+        bookings.book(SLOT_ID)
+
+
 def test_cancel_success(bookings, mocked_api):
     bookings.cancel(SLOT_ID)
 
@@ -97,6 +104,9 @@ def test_requests_use_authenticator_timeout(bookings, method):
         pytest.param({"status": 500, "body": "<html>Internal Server Error</html>"}, id="non-200"),
         pytest.param({"body": "not json"}, id="invalid-json"),
         pytest.param({"json": {"error": 5}}, id="missing-success"),
+        pytest.param({"json": {"success": "false"}}, id="string-success"),
+        pytest.param({"json": {"success": 1}}, id="int-success"),
+        pytest.param({"json": [{"success": True}]}, id="non-object"),
     ],
 )
 def test_bad_response_raises_runtime_error(bookings, mocked_api, method, endpoint, action, response_kwargs):

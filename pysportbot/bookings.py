@@ -37,7 +37,7 @@ class Bookings:
             dict: The parsed JSON body, guaranteed to contain a "success" key.
 
         Raises:
-            RuntimeError: If the status is not 200 or the body is not a JSON object with "success".
+            RuntimeError: If the status is not 200 or the body is not a JSON object with a boolean "success".
         """
         if response.status_code != 200:
             logger.error(
@@ -46,12 +46,14 @@ class Bookings:
             raise RuntimeError(ErrorMessages.unknown_error(action))
 
         try:
-            response_json = response.json()
+            response_json: dict[str, Any] = response.json()
         except ValueError as err:
             logger.error(f"Invalid JSON in {action} response: {response.text[:200]}")
             raise RuntimeError(ErrorMessages.unknown_error(action)) from err
 
-        if not isinstance(response_json, dict) or "success" not in response_json:
+        success = response_json.get("success") if isinstance(response_json, dict) else None
+        # Require a real boolean: a string like "false" would otherwise be truthy
+        if success is not True and success is not False:
             logger.error(f"Unexpected {action} response: {response.text[:200]}")
             raise RuntimeError(ErrorMessages.unknown_error(action))
 
@@ -81,7 +83,7 @@ class Bookings:
             logger.debug(f"Successfully booked slot {slot_id}.")
         else:
             # Handle error cases
-            error_code = response_json["error"]  # Now we know it exists when success=False
+            error_code = response_json.get("error")
 
             if error_code == 5:
                 logger.warning(f"Slot {slot_id} is already booked.")
@@ -93,7 +95,7 @@ class Bookings:
                 logger.warning(f"Slot {slot_id} is not bookable yet.")
                 raise ValueError(ErrorMessages.slot_not_bookable_yet())
             else:
-                logger.error(f"Booking failed with error code: {error_code}")
+                logger.error(f"Booking failed with error code: {error_code}. Response: {response.text[:200]}")
                 raise RuntimeError(ErrorMessages.unknown_error("booking"))
 
     def cancel(self, slot_id: str) -> None:
