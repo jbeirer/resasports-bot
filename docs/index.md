@@ -44,6 +44,25 @@ bot.book(activity="YourFavouriteGymClass", start_time="2024-12-30 07:00:00")
 bot.cancel(activity="YourFavouriteGymClass", start_time="2024-12-30 07:00:00")
 ```
 
+## Error handling
+
+Every error raised by `pysportbot` derives from `SportBotError`, so you can react to specific failures by type:
+
+```python
+from pysportbot import SlotAlreadyBookedError, SlotNotBookableYetError, SportBotError
+
+try:
+    bot.book(activity="YourFavouriteGymClass", start_time="2024-12-30 07:00:00")
+except SlotNotBookableYetError:
+    ...  # the booking window has not opened yet, try again later
+except SlotAlreadyBookedError:
+    ...  # nothing to do
+except SportBotError as e:
+    ...  # any other pysportbot error
+```
+
+All exception classes can be imported from `pysportbot`; see `pysportbot/exceptions.py` for the full hierarchy.
+
 ## Advanced usage as service
 
 You can easily run `pysportbot` as a service to manage your bookings automatically with
