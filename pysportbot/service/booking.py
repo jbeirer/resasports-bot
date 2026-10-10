@@ -117,12 +117,7 @@ def schedule_bookings(
 
         # Re-authenticate before booking if necessary
         try:
-            if bot._auth and bot._auth.is_session_valid():
-                logger.info("Session still valid. Skipping re-authentication.")
-            else:
-                logger.info("Attempting re-authenticating before booking.")
-                bot.login(config["email"], config["password"], config["centre"])
-
+            bot.ensure_logged_in()
         except Exception as e:
             logger.warning(f"Re-authentication failed before booking execution with {e}.")
 

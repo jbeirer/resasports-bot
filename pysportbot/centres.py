@@ -1,11 +1,13 @@
 # centres.py
 
+import json
 import logging
 
 import pandas as pd
 import requests
 from pandas import DataFrame
 
+from .client import ApiClient
 from .endpoints import Endpoints
 from .exceptions import APIError, CentreNotFoundError
 
@@ -18,7 +20,8 @@ class Centres:
     from the Resasports service.
     """
 
-    def __init__(self, print_centres: bool = False) -> None:
+    def __init__(self, client: ApiClient, print_centres: bool = False) -> None:
+        self.client = client
         # Coordinates for the bounding box of the world
         # Set to the entire world by default
         self.bounds: dict = {
@@ -57,36 +60,29 @@ class Centres:
         Raises:
             APIError: If the centres cannot be fetched or the response is malformed or empty.
         """
-        response = None
         try:
-            response = requests.post(
-                Endpoints.CENTRE,
-                json=self.bounds,
-                timeout=10,
-            )
-            response.raise_for_status()
-
-            # Flatten and extract the desired columns
-            df = pd.json_normalize(response.json()["applications"])
-            df = df[["slug", "name", "address.town", "address.country", "address.street_line"]]
-            df.columns = ["slug", "name", "town", "country", "address"]
-        except Exception as exc:
+            data = self.client.post_json(Endpoints.CENTRE, json=self.bounds)
+        except requests.RequestException as exc:
             logger.exception("Failed to fetch centres.")
-            raise APIError(
-                "Failed to fetch centres",
-                endpoint=Endpoints.CENTRE,
-                status_code=response.status_code if response is not None else None,
-                body=response.text if response is not None else "",
-            ) from exc
+            raise APIError("Failed to fetch centres", endpoint=Endpoints.CENTRE) from exc
 
-        if df.empty:
+        applications = data.get("applications")
+        if not applications:
             logger.error("Failed to fetch centres: the response contains no centres.")
             raise APIError(
                 "Failed to fetch centres: the response contains no centres",
                 endpoint=Endpoints.CENTRE,
-                status_code=response.status_code,
-                body=response.text,
+                body=json.dumps(data),
             )
+
+        try:
+            # Flatten and extract the desired columns
+            df = pd.json_normalize(applications)
+            df = df[["slug", "name", "address.town", "address.country", "address.street_line"]]
+        except Exception as exc:
+            logger.exception("Failed to parse centres.")
+            raise APIError("Failed to parse centres", endpoint=Endpoints.CENTRE, body=json.dumps(data)) from exc
+        df.columns = ["slug", "name", "town", "country", "address"]
 
         return df
 

@@ -36,6 +36,9 @@ bot.activities(limit=10)
 # List bookable slots for an activity on a specific day
 bot.daily_slots(activity="YourFavouriteGymClass", day="2025-01-03", limit=10)
 
+# In long-running scripts, log in again with the same credentials if the session has expired
+bot.ensure_logged_in()
+
 # Book an activity slot on a specific day and time
 # Raises an exception if the booking fails (e.g. not bookable yet, already booked, full)
 bot.book(activity="YourFavouriteGymClass", start_time="2024-12-30 07:00:00")
@@ -49,6 +52,7 @@ bot.cancel(activity="YourFavouriteGymClass", start_time="2024-12-30 07:00:00")
 
 All `pysportbot` errors derive from `SportBotError`, so you can react to specific failures by type.
 Network failures such as timeouts are not wrapped: they propagate as `requests.RequestException`.
+A request that fails to connect is retried up to twice. A request that may have reached the server, such as a booking that timed out, is never sent again.
 
 ```python
 import requests

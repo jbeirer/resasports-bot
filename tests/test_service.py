@@ -291,9 +291,9 @@ class TestBooking(unittest.TestCase):
     @patch("pysportbot.service.booking.datetime", wraps=datetime)
     @patch("pysportbot.service.booking.time")
     @patch("pysportbot.service.booking.logger")
-    def test_schedule_bookings_future_execution_invalid_session(self, mock_logger, mock_time, mock_datetime):
+    def test_schedule_bookings_future_execution_ensures_login(self, mock_logger, mock_time, mock_datetime):
         """
-        Test schedule_bookings when execution is scheduled for a future time and session is invalid.
+        Test schedule_bookings re-authenticates if needed when execution is scheduled for a future time.
         """
         # Mock current time to simulate a future execution
         tz = ZoneInfo("Europe/Madrid")
@@ -303,15 +303,12 @@ class TestBooking(unittest.TestCase):
         # Mock datetime.now() to return different values for each call
         mock_datetime.now.side_effect = [
             mock_now,  # First call - initial time check
-            mock_execution_time,  # Second call - after session validation, time has "advanced"
+            mock_execution_time,  # Second call - after re-authentication, time has "advanced"
         ]
 
         # Mock the calculate_next_execution function to return the future execution time
         with patch("pysportbot.service.booking.calculate_next_execution", return_value=mock_execution_time):
             mock_bot = MagicMock()
-
-            # Mock the session validation to return False (invalid session)
-            mock_bot._auth.is_session_valid.return_value = False
 
             config = {
                 "email": "test@example.com",
@@ -345,81 +342,15 @@ class TestBooking(unittest.TestCase):
         ]
         mock_time.sleep.assert_has_calls(expected_sleep_calls, any_order=False)
 
-        # Assert session validation was called
-        mock_bot._auth.is_session_valid.assert_called_once()
-
-        # Assert the bot.login is called (because session was invalid)
-        mock_bot.login.assert_called_once_with("test@example.com", "pass", "my-gim")
+        # Assert the bot re-authenticated if needed, exactly once
+        mock_bot.ensure_logged_in.assert_called_once_with()
 
     @patch("pysportbot.service.booking.datetime", wraps=datetime)
     @patch("pysportbot.service.booking.time")
     @patch("pysportbot.service.booking.logger")
-    def test_schedule_bookings_future_execution_valid_session(self, mock_logger, mock_time, mock_datetime):
+    def test_schedule_bookings_reauthentication_exception(self, mock_logger, mock_time, mock_datetime):
         """
-        Test schedule_bookings when execution is scheduled for a future time and session is valid.
-        """
-        # Mock current time to simulate a future execution
-        tz = ZoneInfo("Europe/Madrid")
-        mock_now = datetime(2024, 1, 8, 9, 0, 0, tzinfo=tz)  # Current time
-        mock_execution_time = datetime(2024, 1, 8, 10, 0, 0, tzinfo=tz)  # 1 hour later
-
-        # Mock datetime.now() to return different values for each call
-        mock_datetime.now.side_effect = [
-            mock_now,  # First call - initial time check
-            mock_execution_time,  # Second call - after session validation, time has "advanced"
-        ]
-
-        # Mock the calculate_next_execution function to return the future execution time
-        with patch("pysportbot.service.booking.calculate_next_execution", return_value=mock_execution_time):
-            mock_bot = MagicMock()
-
-            # Mock the session validation to return True (valid session)
-            mock_bot._auth.is_session_valid.return_value = True
-
-            config = {
-                "email": "test@example.com",
-                "password": "pass",
-                "centre": "my-gim",
-                "booking_execution": "2024-01-08 10:00:00",
-                "classes": [{"activity": "Yoga", "class_day": "Monday", "class_time": "09:00:00"}],
-            }
-
-            # Run schedule_bookings
-            schedule_bookings(
-                bot=mock_bot,
-                config=config,
-                booking_delay=10,
-                retry_attempts=2,
-                retry_delay=1,
-                time_zone="Europe/Madrid",
-                max_threads=1,
-            )
-
-        # Assert the correct sleep calls
-        time_until_execution = (mock_execution_time - mock_now).total_seconds()
-        reauth_sleep = time_until_execution - 60  # Time until session check
-        remaining_time = 0  # Should be 0 since second datetime.now returns execution_time
-
-        # Expected sleep calls in the correct order
-        expected_sleep_calls = [
-            call(reauth_sleep),  # Time until session validation
-            call(remaining_time),  # Remaining time after session check
-            call(10),  # Booking delay
-        ]
-        mock_time.sleep.assert_has_calls(expected_sleep_calls, any_order=False)
-
-        # Assert session validation was called
-        mock_bot._auth.is_session_valid.assert_called_once()
-
-        # Assert the bot.login is NOT called (because session was valid)
-        mock_bot.login.assert_not_called()
-
-    @patch("pysportbot.service.booking.datetime", wraps=datetime)
-    @patch("pysportbot.service.booking.time")
-    @patch("pysportbot.service.booking.logger")
-    def test_schedule_bookings_session_validation_exception(self, mock_logger, mock_time, mock_datetime):
-        """
-        Test schedule_bookings when session validation throws an exception.
+        Test schedule_bookings warns and continues when re-authentication throws an exception.
         """
         # Mock current time to simulate a future execution
         tz = ZoneInfo("Europe/Madrid")
@@ -436,8 +367,8 @@ class TestBooking(unittest.TestCase):
         with patch("pysportbot.service.booking.calculate_next_execution", return_value=mock_execution_time):
             mock_bot = MagicMock()
 
-            # Mock the session validation to raise an exception
-            mock_bot._auth.is_session_valid.side_effect = Exception("Network error")
+            # Mock the re-authentication to raise an exception
+            mock_bot.ensure_logged_in.side_effect = Exception("Network error")
 
             config = {
                 "email": "test@example.com",
@@ -471,11 +402,8 @@ class TestBooking(unittest.TestCase):
         ]
         mock_time.sleep.assert_has_calls(expected_sleep_calls, any_order=False)
 
-        # Assert session validation was attempted
-        mock_bot._auth.is_session_valid.assert_called_once()
-
-        # Assert the bot.login is NOT called (exception handling should prevent it)
-        mock_bot.login.assert_not_called()
+        # Assert re-authentication was attempted
+        mock_bot.ensure_logged_in.assert_called_once_with()
 
         # Assert warning was logged
         mock_logger.warning.assert_called_with("Re-authentication failed before booking execution with Network error.")

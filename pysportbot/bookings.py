@@ -1,9 +1,9 @@
+import json
 import logging
 from typing import Any
 
-from requests import Response
-
 from .authenticator import Authenticator
+from .client import ApiClient
 from .endpoints import Endpoints
 from .exceptions import (
     APIError,
@@ -27,64 +27,36 @@ _ERROR_CODES: dict[int, type[BookingError]] = {
 class Bookings:
     """Handles booking and cancellation of activity slots."""
 
-    def __init__(self, authenticator: Authenticator) -> None:
+    def __init__(self, client: ApiClient, auth: Authenticator) -> None:
         """Initialize the Bookings class."""
-        # Session
-        self.session = authenticator.session
-        # Nubapp credentials
-        self.creds = authenticator.creds
-        # Headers for requests
-        self.headers = authenticator.headers
-        # (connect, read) timeout for requests
-        self.timeout = authenticator.timeout
+        self.client = client
+        # Provides id_user for every request
+        self.auth = auth
 
-    @staticmethod
-    def _parse_response(response: Response, action: str) -> dict[str, Any]:
+    def _post(self, endpoint: Endpoints, slot_id: str, action: str) -> dict[str, Any]:
         """
-        Validate the HTTP status and body of a booking/cancellation response.
+        Send a booking or cancellation request for a slot.
 
         Args:
-            response (Response): The HTTP response.
+            endpoint (Endpoints): The booking or cancellation endpoint.
+            slot_id (str): The unique ID of the activity slot.
             action (str): The action name used in error messages ("booking" or "cancellation").
 
         Returns:
-            dict: The parsed JSON body, guaranteed to contain a "success" key.
+            dict: The parsed JSON body, guaranteed to contain a boolean "success" key.
 
         Raises:
-            APIError: If the status is not 200 or the body is not a JSON object with a boolean "success".
+            APIError: If the request fails or the body has no boolean "success".
         """
-        if response.status_code != 200:
-            logger.error(
-                f"{action.capitalize()} request failed with status {response.status_code}: {response.text[:200]}"
-            )
-            raise APIError(
-                f"{action.capitalize()} request failed",
-                endpoint=response.url,
-                status_code=response.status_code,
-                body=response.text,
-            )
+        payload = {"id_user": self.auth.id_user, "id_activity_calendar": slot_id}
+        response_json = self.client.post_json(endpoint, data=payload)
 
-        try:
-            response_json: dict[str, Any] = response.json()
-        except ValueError as err:
-            logger.error(f"Invalid JSON in {action} response: {response.text[:200]}")
-            raise APIError(
-                f"Invalid JSON in {action} response",
-                endpoint=response.url,
-                status_code=response.status_code,
-                body=response.text,
-            ) from err
-
-        success = response_json.get("success") if isinstance(response_json, dict) else None
+        success = response_json.get("success")
         # Require a real boolean: a string like "false" would otherwise be truthy
         if success is not True and success is not False:
-            logger.error(f"Unexpected {action} response: {response.text[:200]}")
-            raise APIError(
-                f"Unexpected {action} response",
-                endpoint=response.url,
-                status_code=response.status_code,
-                body=response.text,
-            )
+            body = json.dumps(response_json)
+            logger.error(f"Unexpected {action} response: {body[:200]}")
+            raise APIError(f"Unexpected {action} response", endpoint=endpoint, body=body)
 
         return response_json
 
@@ -104,12 +76,7 @@ class Bookings:
         """
         logger.debug(f"Attempting to book slot {slot_id}...")
 
-        # Payload for booking
-        payload = {"id_user": self.creds["id_user"], "id_activity_calendar": slot_id}
-
-        # Send booking request
-        response = self.session.post(Endpoints.BOOKING, data=payload, headers=self.headers, timeout=self.timeout)
-        response_json = self._parse_response(response, "booking")
+        response_json = self._post(Endpoints.BOOKING, slot_id, "booking")
         # Check success directly
         if response_json["success"]:
             logger.debug(f"Successfully booked slot {slot_id}.")
@@ -121,7 +88,9 @@ class Bookings:
 
             error = error_class(slot_id, code)
             if error_class is BookingError:
-                logger.error(f"Booking failed with error code: {error_code}. Response: {response.text[:200]}")
+                logger.error(
+                    f"Booking failed with error code: {error_code}. Response: {json.dumps(response_json)[:200]}"
+                )
             else:
                 logger.warning(str(error))
             raise error
@@ -139,12 +108,7 @@ class Bookings:
         """
         logger.debug(f"Attempting to cancel slot {slot_id}...")
 
-        # Payload for cancellation
-        payload = {"id_user": self.creds["id_user"], "id_activity_calendar": slot_id}
-
-        # Send cancellation request
-        response = self.session.post(Endpoints.CANCELLATION, data=payload, headers=self.headers, timeout=self.timeout)
-        response_json = self._parse_response(response, "cancellation")
+        response_json = self._post(Endpoints.CANCELLATION, slot_id, "cancellation")
 
         # Handle response
         if response_json["success"]:

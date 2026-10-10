@@ -6,21 +6,26 @@ import requests
 import responses
 
 from pysportbot.authenticator import Authenticator
+from pysportbot.client import ApiClient
 from pysportbot.endpoints import Endpoints
 from pysportbot.exceptions import AuthenticationError
-from pysportbot.session import Session
 
 
 @pytest.fixture
-def auth(mocked_api) -> Authenticator:
-    return Authenticator(Session(), "test-centre")
+def client() -> ApiClient:
+    return ApiClient()
+
+
+@pytest.fixture
+def auth(mocked_api, client) -> Authenticator:
+    return Authenticator(client)
 
 
 def _without(payload: dict, key: str) -> dict:
     return {k: v for k, v in payload.items() if k != key}
 
 
-def test_login_success(auth, mocked_api, payloads):
+def test_login_success(auth, client, mocked_api, payloads):
     auth.login("user@example.com", "password")
 
     [login_call] = [c for c in mocked_api.calls if c.request.url == str(Endpoints.USER_LOGIN)]
@@ -28,11 +33,9 @@ def test_login_success(auth, mocked_api, payloads):
 
     login_app = payloads["user_login"]["applications"][0]
     assert auth.authenticated is True
-    assert auth.creds == {
-        "id_application": str(login_app["id_application"]),
-        "id_user": str(login_app["id_user"]),
-    }
-    assert auth.headers["Authorization"] == f"Bearer {payloads['sport_user_token']['jwt_token']}"
+    assert auth.id_application == str(login_app["id_application"])
+    assert auth.id_user == str(login_app["id_user"])
+    assert client.session.headers["Authorization"] == f"Bearer {payloads['sport_user_token']['jwt_token']}"
     assert auth.user_id == str(payloads["user"]["data"]["user"]["id_user"])
 
 
@@ -140,3 +143,45 @@ def test_session_invalid_on_user_failure(auth, mocked_api, response_kwargs):
     mocked_api.replace(responses.POST, str(Endpoints.USER), **response_kwargs)
 
     assert auth.is_session_valid() is False
+
+
+def test_session_invalid_on_non_object_user_data(auth, mocked_api):
+    auth.login("user@example.com", "password")
+    mocked_api.replace(responses.POST, str(Endpoints.USER), json={"data": []})
+
+    assert auth.is_session_valid() is False
+
+
+def test_multiple_applications_use_first_and_warn(auth, mocked_api, payloads, pysportbot_caplog):
+    first = payloads["user_login"]["applications"][0]
+    second = {"id_application": 4321, "id_user": 8765}
+    mocked_api.replace(
+        responses.POST,
+        str(Endpoints.USER_LOGIN),
+        json={**payloads["user_login"], "applications": [first, second]},
+    )
+
+    auth.login("user@example.com", "password")
+
+    assert auth.id_application == str(first["id_application"])
+    warnings = [r.getMessage() for r in pysportbot_caplog.records if r.levelname == "WARNING"]
+    assert any(str(first["id_application"]) in w and str(second["id_application"]) in w for w in warnings)
+
+
+def test_relogin_does_not_send_stale_token(auth, mocked_api):
+    auth.login("user@example.com", "password")
+    auth.login("user@example.com", "password")
+
+    login_calls = [c for c in mocked_api.calls if c.request.url == str(Endpoints.USER_LOGIN)]
+    assert all("Authorization" not in c.request.headers for c in login_calls)
+
+
+def test_failed_login_clears_bearer_token(auth, client, mocked_api):
+    auth.login("user@example.com", "password")
+    mocked_api.replace(responses.POST, str(Endpoints.USER_LOGIN), status=401)
+
+    with pytest.raises(AuthenticationError):
+        auth.login("user@example.com", "wrong-password")
+
+    assert "Authorization" not in client.session.headers
+    assert (auth.id_user, auth.id_application) == (None, None)

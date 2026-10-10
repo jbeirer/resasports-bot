@@ -1306,6 +1306,7 @@ dependencies = [
     { name = "pandas" },
     { name = "requests" },
     { name = "tzdata" },
+    { name = "urllib3" },
 ]
 
 [package.dev-dependencies]
@@ -1329,6 +1330,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=3.0.5" },
     { name = "requests", specifier = ">=2.34.2" },
     { name = "tzdata", specifier = ">=2026.5" },
+    { name = "urllib3", specifier = ">=2.0" },
 ]
 
 [package.metadata.requires-dev]

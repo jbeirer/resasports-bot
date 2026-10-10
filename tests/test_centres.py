@@ -5,10 +5,12 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
+import requests
 import responses
 
 from pysportbot import SportBot
 from pysportbot.centres import Centres
+from pysportbot.client import ApiClient
 from pysportbot.endpoints import Endpoints
 from pysportbot.exceptions import APIError, CentreNotFoundError
 
@@ -123,7 +125,7 @@ def test_print_centres_does_not_output_when_disabled(pysportbot_caplog):
 
 def test_check_centre_unknown_raises(mocked_api):
     """`check_centre` rejects a slug that is not in the fetched centre list."""
-    centres = Centres()
+    centres = Centres(ApiClient())
 
     with pytest.raises(CentreNotFoundError) as exc_info:
         centres.check_centre("unknown")
@@ -133,21 +135,24 @@ def test_check_centre_unknown_raises(mocked_api):
 
 def test_check_centre_valid_slug_passes(mocked_api, centre_slug):
     """`check_centre` accepts a slug returned by the centres endpoint."""
-    centres = Centres()
+    centres = Centres(ApiClient())
 
     centres.check_centre(centre_slug)
 
 
+# Content errors found after a 2xx response carry no status code
 @pytest.mark.parametrize(
-    "response_kwargs",
+    ("response_kwargs", "status_code"),
     [
-        pytest.param({"status": 500}, id="non-200"),
-        pytest.param({"body": "not json"}, id="invalid-json"),
-        pytest.param({"json": {}}, id="missing-applications"),
-        pytest.param({"json": {"applications": []}}, id="empty"),
+        pytest.param({"status": 500}, 500, id="non-200"),
+        pytest.param({"body": "not json"}, 200, id="invalid-json"),
+        pytest.param({"json": {}}, None, id="missing-applications"),
+        pytest.param({"json": {"applications": []}}, None, id="empty"),
+        pytest.param({"json": {"applications": [{"slug": "no-address"}]}}, None, id="missing-columns"),
+        pytest.param({"body": requests.ConnectionError("connection refused")}, None, id="connection-error"),
     ],
 )
-def test_fetch_centres_failure_raises_api_error(mocked_api, response_kwargs):
+def test_fetch_centres_failure_raises_api_error(mocked_api, response_kwargs, status_code):
     """A failed centre fetch raises a clear APIError instead of `KeyError: 'slug'`."""
     mocked_api.replace(responses.POST, str(Endpoints.CENTRE), **response_kwargs)
 
@@ -155,4 +160,4 @@ def test_fetch_centres_failure_raises_api_error(mocked_api, response_kwargs):
         SportBot()
 
     assert exc_info.value.endpoint == str(Endpoints.CENTRE)
-    assert exc_info.value.status_code == response_kwargs.get("status", 200)
+    assert exc_info.value.status_code == status_code

@@ -8,9 +8,9 @@ import responses
 from pysportbot import SportBot
 from pysportbot.activities import SLOTS_READ_TIMEOUT, Activities
 from pysportbot.authenticator import Authenticator
+from pysportbot.client import ApiClient
 from pysportbot.endpoints import Endpoints
 from pysportbot.exceptions import ActivityNotFoundError, APIError
-from pysportbot.session import Session
 
 ACTIVITY_COLUMNS = ["id_activity", "name_activity", "id_category_activity"]
 DAY = "2030-01-04"
@@ -26,9 +26,10 @@ def _frozen_now(tz=None):
 
 @pytest.fixture
 def activities(mocked_api) -> Activities:
-    auth = Authenticator(Session(), "test-centre")
+    client = ApiClient()
+    auth = Authenticator(client)
     auth.login("user@example.com", "password")
-    return Activities(auth)
+    return Activities(client, auth)
 
 
 def _slots_calls(mocked_api):
@@ -183,9 +184,10 @@ def test_daily_slots_no_matching_activity(activities, mocked_api, payloads):
     ],
 )
 def test_fetch_window_uses_configured_time_zone(mocked_api, time_zone, expected_start, expected_end):
-    auth = Authenticator(Session(), "test-centre")
+    client = ApiClient()
+    auth = Authenticator(client)
     auth.login("user@example.com", "password")
-    activities = Activities(auth, time_zone=time_zone)
+    activities = Activities(client, auth, time_zone=time_zone)
 
     with patch("pysportbot.activities.datetime", wraps=datetime) as mock_datetime:
         mock_datetime.now.side_effect = _frozen_now
@@ -212,7 +214,7 @@ def test_requests_use_slots_timeout(activities, method):
     df_activities = activities.fetch()
     args = (df_activities, "Yoga", DAY) if method == "daily_slots" else ()
 
-    with patch.object(activities.session, "post", wraps=activities.session.post) as post:
+    with patch.object(activities.client.session, "request", wraps=activities.client.session.request) as post:
         getattr(activities, method)(*args)
 
     assert post.call_args.kwargs["timeout"] == (5, SLOTS_READ_TIMEOUT)

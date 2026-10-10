@@ -8,6 +8,7 @@ from .activities import Activities
 from .authenticator import Authenticator
 from .bookings import Bookings
 from .centres import Centres
+from .client import ApiClient
 from .exceptions import (
     ActivityNotFoundError,
     APIError,
@@ -25,7 +26,6 @@ from .exceptions import (
     SportBotError,
 )
 from .logging_utils import configure_logging, set_log_level
-from .session import Session
 
 # Silence pysportbot by default; SportBot() or configure_logging() opt into output
 logging.getLogger(__name__).addHandler(logging.NullHandler())
@@ -64,34 +64,36 @@ class SportBot:
             self._logger.info(f"Log level: {log_level}")
         self._logger.info(f"Time zone: {time_zone}")
         self._time_zone = time_zone
-        self._centres = Centres(print_centres)
-        self._session: Session = Session()
-        self._auth: Authenticator | None = None
+        self._client = ApiClient()
+        self._centres = Centres(self._client, print_centres)
+        self._authenticator = Authenticator(self._client)
         self._activities: Activities | None = None
         self._bookings: Bookings | None = None
         self._df_activities: DataFrame | None = None
         self._is_logged_in: bool = False
+        # (email, password, centre) of the last successful login, for ensure_logged_in()
+        self._credentials: tuple[str, str, str] | None = None
 
     @property
     def activities_manager(self) -> Activities:
         """Get the activities manager, ensuring user is logged in."""
-        if not self._is_logged_in or self._auth is None:
+        if not self._is_logged_in:
             raise NotLoggedInError()
 
         # Lazy initialization - create only when first needed
         if self._activities is None:
-            self._activities = Activities(self._auth, time_zone=self._time_zone)
+            self._activities = Activities(self._client, self._authenticator, time_zone=self._time_zone)
         return self._activities
 
     @property
     def bookings_manager(self) -> Bookings:
         """Get the bookings manager, ensuring user is logged in."""
-        if not self._is_logged_in or self._auth is None:
+        if not self._is_logged_in:
             raise NotLoggedInError()
 
         # Lazy initialization - create only when first needed
         if self._bookings is None:
-            self._bookings = Bookings(self._auth)
+            self._bookings = Bookings(self._client, self._authenticator)
         return self._bookings
 
     def set_log_level(self, log_level: str) -> None:
@@ -103,27 +105,45 @@ class SportBot:
         self._centres.check_centre(centre)
         self._logger.info(f"Selected centre: {centre}")
 
-        # Initialize the Authenticator
-        self._auth = Authenticator(self._session, centre)
-
         self._logger.info("Attempting to log in...")
         try:
             # Login to get valid credentials
-            self._auth.login(email, password)
+            self._authenticator.login(email, password)
             self._is_logged_in = True
             self._logger.info("Login successful!")
 
             # Fetch activities on first successful login
             self._df_activities = self.activities_manager.fetch()
         except Exception:
-            self._is_logged_in = False
             # Clean up on failure
-            self._activities = None
-            self._bookings = None
-            self._auth = None
+            self._is_logged_in = False
             self._df_activities = None
             self._logger.exception("Login failed.")
             raise
+        self._credentials = (email, password, centre)
+
+    def ensure_logged_in(self) -> None:
+        """
+        Re-login with the stored credentials if the current session is no longer valid.
+
+        Long-running programs can call this before time-critical requests, because the session may expire some time
+        after `login()`. It costs one request when the session is still valid. Otherwise it calls `login()` again with
+        the email, password and centre of the last successful login.
+
+        Raises:
+            NotLoggedInError: If `login()` has never succeeded.
+            AuthenticationError: If the re-login fails.
+            APIError: If fetching the activities after the re-login fails.
+        """
+        if self._credentials is None:
+            raise NotLoggedInError()
+
+        if self._is_logged_in and self._authenticator.is_session_valid():
+            self._logger.info("Session still valid. Skipping re-authentication.")
+            return
+
+        self._logger.info("Session is no longer valid. Logging in again...")
+        self.login(*self._credentials)
 
     def is_logged_in(self) -> bool:
         """Returns the login status."""

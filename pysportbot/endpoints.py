@@ -59,11 +59,3 @@ class Endpoints(StrEnum):
 
     BOOKING = f"{BASE_NUBAPP}/{NUBAPP_API}/activities/bookActivityCalendar.php"
     CANCELLATION = f"{BASE_NUBAPP}/{NUBAPP_API}/activities/leaveActivityCalendar.php"
-
-    # ============================================================
-    # Utility
-    # ============================================================
-
-    def __str__(self) -> str:
-        """Return URL string for direct HTTP usage."""
-        return str(self.value)
