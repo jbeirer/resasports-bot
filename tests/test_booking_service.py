@@ -1,4 +1,5 @@
 import json
+import threading
 from datetime import datetime, time, timedelta
 from unittest.mock import MagicMock, call
 from zoneinfo import ZoneInfo
@@ -171,6 +172,16 @@ def test_gives_up_polling_after_poll_window(attempt, mocked_api, fake_clock):
     assert result.attempts == 5
     assert sleep.call_args_list == [call(0.5)] * 4
     assert fake_clock.elapsed == 2
+
+
+def test_last_poll_happens_at_end_of_poll_window(attempt, mocked_api, fake_clock):
+    _answer_bookings(mocked_api, NOT_BOOKABLE_YET)
+
+    result, sleep = attempt(RetryPolicy(poll_interval=0.5, poll_window=1.2))
+
+    assert sleep.call_args_list == [call(0.5), call(0.5), call(pytest.approx(0.2))]
+    assert fake_clock.elapsed == pytest.approx(1.2)
+    assert result.attempts == 4
 
 
 def test_stops_when_already_booked(attempt, mocked_api):
@@ -383,8 +394,101 @@ def test_schedule_bookings_continues_when_relogin_fails(frozen_now, mock_time, p
     results = schedule_bookings(bot, SCHEDULED_CONFIG, POLICY)
 
     assert "Re-authentication failed before booking execution with Network error." in pysportbot_caplog.text
+    assert bot.ensure_logged_in.call_count == POLICY.retry_attempts
     bot.book_slot.assert_called_once_with(bot.find_slot.return_value)
     assert [r.status for r in results] == [BookingStatus.BOOKED]
+
+
+def test_schedule_bookings_retries_failed_relogin(frozen_now, mock_time):
+    bot = MagicMock()
+    bot.ensure_logged_in.side_effect = [Exception("Network error"), None]
+
+    schedule_bookings(bot, SCHEDULED_CONFIG, POLICY)
+
+    assert bot.ensure_logged_in.call_count == 2
+    # The retry delay at 540 s, then the remaining 59 s until execution in chunks
+    assert mock_time.sleep.call_args_list[-3:] == [call(1), call(30), call(29)]
+
+
+def test_schedule_bookings_stops_relogin_retries_at_booking_time(frozen_now, mock_time, fake_clock):
+    bot = MagicMock()
+    bot.ensure_logged_in.side_effect = Exception("Network error")
+    booking_times = []
+    bot.book_slot.side_effect = lambda slot: booking_times.append(fake_clock.elapsed)
+
+    schedule_bookings(bot, SCHEDULED_CONFIG, RetryPolicy(retry_attempts=5, retry_delay=50))
+
+    # Attempts at 540 and 590 s: another one at 640 s would be after the booking time
+    assert bot.ensure_logged_in.call_count == 2
+    assert booking_times == [600]
+
+
+def test_slow_lookup_does_not_delay_other_classes(frozen_now, mock_time):
+    slow, fast = ClassSpec("Slow", FRIDAY, time(9, 0)), ClassSpec("Fast", FRIDAY, time(12, 0))
+    config = ServiceConfig(
+        email="user@example.com",
+        password="password",
+        centre="test-centre",
+        execution=WeeklyTime(FRIDAY, time(7, 40)),
+        classes=(slow, fast),
+    )
+    fast_booked = threading.Event()
+    events = []
+
+    def find_slot(activity, start):
+        if activity == "Slow":
+            # Blocks until the other class is booked; a lookup that delays all bookings would time out here
+            events.append(("slow lookup done", fast_booked.wait(timeout=5)))
+        return activity
+
+    def book_slot(slot):
+        events.append((f"{slot} booked", True))
+        if slot == "Fast":
+            fast_booked.set()
+        return slot
+
+    bot = MagicMock(**{"find_slot.side_effect": find_slot, "book_slot.side_effect": book_slot})
+
+    results = schedule_bookings(bot, config, POLICY, max_threads=2)
+
+    assert events == [("Fast booked", True), ("slow lookup done", True), ("Slow booked", True)]
+    assert [r.status for r in results] == [BookingStatus.BOOKED, BookingStatus.BOOKED]
+
+
+def test_booking_delay_does_not_shorten_poll_window(offline_bot, mocked_api, frozen_now, mock_time, fake_clock):
+    booking_times = _record_request_times(mocked_api, fake_clock, Endpoints.BOOKING, {"success": False, "error": 28})
+
+    results = schedule_bookings(
+        offline_bot, SCHEDULED_CONFIG, RetryPolicy(poll_interval=10, poll_window=60), booking_delay=90
+    )
+
+    # Booking starts at 600 + 90 s and polls for the full window, although the delay is longer than the window
+    assert booking_times == [690, 700, 710, 720, 730, 740, 750]
+    assert results[0].status == BookingStatus.FAILED
+
+
+def test_dry_run_uses_slot_found_ahead_of_time(offline_bot, mocked_api, frozen_now, mock_time):
+    n_calls = len(mocked_api.calls)
+
+    results = schedule_bookings(offline_bot, SCHEDULED_CONFIG, POLICY, dry_run=True)
+
+    assert [r.status for r in results] == [BookingStatus.DRY_RUN]
+    assert results[0].slot is not None and results[0].slot.id == 5004
+    # Only the re-login check and the lookup ahead of time
+    assert _urls(mocked_api, n_calls) == [str(Endpoints.USER), str(Endpoints.SLOTS)]
+
+
+def test_dry_run_of_cancelled_slot_fails(attempt, mocked_api, payloads):
+    calendar = payloads["activities_calendar"]
+    next(e for e in calendar["data"]["activities_calendar"] if e["id_activity_calendar"] == 5004)["cancelled"] = 1
+    mocked_api.replace(responses.POST, str(Endpoints.SLOTS), json=calendar)
+
+    result, sleep = attempt(dry_run=True)
+
+    assert result.status == BookingStatus.FAILED
+    assert not result.ok
+    assert result.error == "Slot 5004 is cancelled, so booking it would fail."
+    sleep.assert_not_called()
 
 
 def test_schedule_bookings_now_books_at_once(frozen_now, mock_time):

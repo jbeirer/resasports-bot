@@ -1,6 +1,5 @@
 import logging
 import time
-from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -14,12 +13,19 @@ from pysportbot.models import Slot
 from .config import ClassSpec, ServiceConfig
 from .results import BookingResult, BookingStatus, describe
 from .retry import RetryPolicy, classify
-from .scheduling import Clock, Sleep, next_class_date, next_execution, wait_until
+from .scheduling import Clock, Sleep, next_class_date, next_execution, sleep_until, to_monotonic, wait_until
 
 logger = logging.getLogger(__name__)
 
 # Seconds before the execution time to re-authenticate and look up the slots
 PREPARATION_LEAD = 60.0
+
+
+class _SlotCancelledError(SportBotError):
+    """A dry run found the slot cancelled. A real booking sends the request anyway, and lets the API decide."""
+
+    def __init__(self, slot_id: int) -> None:
+        super().__init__(f"Slot {slot_id} is cancelled, so booking it would fail.")
 
 
 def attempt_booking(
@@ -73,7 +79,7 @@ def attempt_booking(
                     )
                 else:
                     logger.debug(f"Attempt {attempts} to book {what} failed: {error}")
-                sleep(policy.poll_interval)
+                sleep(min(policy.poll_interval, poll_until - clock()))
                 continue
             if action == "retry":
                 failures += 1
@@ -143,14 +149,15 @@ def _dry_run_booking(bot: SportBot, activity: str, start: datetime, slot: Slot |
     Check that the slot exists and is open, and log what booking would do, without sending a booking request.
 
     Raises:
+        _SlotCancelledError: If the slot is cancelled, so booking it would fail.
         SlotFullError: If the slot has no places left, as `SportBot.book()` would.
         SportBotError: If the slot cannot be found, see `SportBot.find_slot()`.
     """
     if slot is None:
         slot = bot.find_slot(activity=activity, start=start)
     if slot.cancelled:
-        logger.warning(f"DRY RUN: {describe(activity, start)} is cancelled, so booking it would fail.")
-    elif slot.is_full:
+        raise _SlotCancelledError(slot.id)
+    if slot.is_full:
         raise SlotFullError(str(slot.id))
     else:
         logger.info(
@@ -160,24 +167,64 @@ def _dry_run_booking(bot: SportBot, activity: str, start: datetime, slot: Slot |
     return slot
 
 
-def _prepare(bot: SportBot, bookings: Sequence[tuple[ClassSpec, datetime]]) -> list[Slot | None]:
-    """Re-authenticate if necessary, and look up the slots so that booking them costs one request each."""
-    try:
-        bot.ensure_logged_in()
-    except Exception as e:
-        logger.warning(f"Re-authentication failed before booking execution with {e}.")
+def _relogin(bot: SportBot, policy: RetryPolicy, *, deadline: float, clock: Clock, sleep: Sleep) -> None:
+    """
+    Log in again if the session has expired. Retry failures as for a booking, but not past `deadline`.
 
-    slots: list[Slot | None] = []
-    for spec, start in bookings:
+    A failed re-login leaves the bot logged out, so that every booking would fail.
+    """
+    for attempt in range(1, policy.retry_attempts + 1):
         try:
-            slot: Slot | None = bot.find_slot(spec.activity, start)
-        except (SportBotError, requests.RequestException) as e:
-            # E.g. the calendar is not published yet
-            what = describe(spec.activity, start)
-            logger.info(f"Could not look up {what} ahead of time, so it will be looked up when booking: {e}")
-            slot = None
-        slots.append(slot)
-    return slots
+            bot.ensure_logged_in()
+        except Exception as e:
+            message = f"Re-authentication failed before booking execution with {e}."
+            if attempt == policy.retry_attempts or clock() + policy.retry_delay >= deadline:
+                logger.warning(message)
+                return
+            logger.warning(f"{message} Retrying in {policy.retry_delay:g} s.")
+            sleep(policy.retry_delay)
+        else:
+            return
+
+
+def _look_up(bot: SportBot, spec: ClassSpec, start: datetime) -> Slot | None:
+    """Find the slot ahead of time, so that booking it costs one request. None if it cannot be found yet."""
+    try:
+        return bot.find_slot(spec.activity, start)
+    except (SportBotError, requests.RequestException) as e:
+        # E.g. the calendar is not published yet
+        what = describe(spec.activity, start)
+        logger.info(f"Could not look up {what} ahead of time, so it will be looked up when booking: {e}")
+        return None
+
+
+def _book_class(
+    bot: SportBot,
+    spec: ClassSpec,
+    start: datetime,
+    policy: RetryPolicy,
+    *,
+    look_up: bool,
+    booking_start: float,
+    dry_run: bool,
+    clock: Clock,
+    sleep: Sleep,
+) -> BookingResult:
+    """Look up the slot first if `look_up`, wait until `booking_start` on the `clock` scale, then book."""
+    # Each class looks up its own slot, so that a slow lookup cannot delay the booking of the other classes
+    slot = _look_up(bot, spec, start) if look_up else None
+    sleep_until(booking_start, clock=clock, sleep=sleep)
+    return attempt_booking(
+        bot,
+        spec,
+        start,
+        policy,
+        slot=slot,
+        poll_until=booking_start + policy.poll_window,
+        dry_run=dry_run,
+        clock=clock,
+        sleep=sleep,
+    )
 
 
 def schedule_bookings(
@@ -201,7 +248,7 @@ def schedule_bookings(
     Args:
         bot: A logged-in bot.
         config: The service configuration.
-        policy: When to try booking a class again.
+        policy: When to try booking a class again. The poll window starts when booking starts.
         booking_delay: Seconds to wait after the execution time before booking.
         time_zone: The time zone of the execution and class times.
         max_threads: The maximum number of classes booked in parallel.
@@ -228,41 +275,38 @@ def schedule_bookings(
     for cls, start in bookings:
         logger.info(f"Scheduled to book {describe(cls.activity, start)}.")
 
-    slots: list[Slot | None] = [None] * len(bookings)
     # Compare instants: subtracting datetimes that share a ZoneInfo gives the wall-clock difference, which is off by
     # an hour across a DST change
     time_until_execution = execution_time.timestamp() - now.timestamp()
-    if time_until_execution > 0:
+    prepare = time_until_execution > 0
+    if prepare:
         logger.info(
             f"Waiting {time_until_execution:.2f} seconds until global execution time: "
             f"{execution_time.strftime('%Y-%m-%d %H:%M:%S %z')}."
         )
-        preparation_time = datetime.fromtimestamp(execution_time.timestamp() - PREPARATION_LEAD, tz)
-        wait_until(preparation_time, clock=clock, sleep=sleep)
-        slots = _prepare(bot, bookings)
-        logger.info("Waiting until booking execution.")
-    execution = wait_until(execution_time, clock=clock, sleep=sleep)
+        wait_until(datetime.fromtimestamp(execution_time.timestamp() - PREPARATION_LEAD, tz), clock=clock, sleep=sleep)
 
-    # Global booking delay
+    # All threads book at this same instant on purpose: the first requests have the best chance
+    booking_start = to_monotonic(execution_time, clock) + booking_delay
     if booking_delay > 0:
-        logger.info(f"Waiting {booking_delay:g} seconds before attempting booking.")
-        sleep(booking_delay)
+        logger.info(f"Booking {booking_delay:g} seconds after the execution time.")
+    if prepare:
+        _relogin(bot, policy, deadline=booking_start, clock=clock, sleep=sleep)
 
-    # All threads book at the same instant on purpose: the first requests have the best chance
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
         futures = [
             executor.submit(
-                attempt_booking,
+                _book_class,
                 bot,
                 cls,
                 start,
                 policy,
-                slot=slot,
-                poll_until=execution + policy.poll_window,
+                look_up=prepare,
+                booking_start=booking_start,
                 dry_run=dry_run,
                 clock=clock,
                 sleep=sleep,
             )
-            for (cls, start), slot in zip(bookings, slots, strict=True)
+            for cls, start in bookings
         ]
     return [future.result() for future in futures]

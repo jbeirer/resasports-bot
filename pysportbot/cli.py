@@ -406,7 +406,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=_seconds,
         default=60.0,
         metavar="SECONDS",
-        help="How long to keep polling, in seconds after the execution time [default: 60].",
+        help="How long to keep polling, in seconds after booking starts [default: 60].",
     )
     run.add_argument(
         "--max-threads",

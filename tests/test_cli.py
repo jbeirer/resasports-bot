@@ -382,11 +382,12 @@ def test_run_dry_run_reports_cancelled_slot(
     entry["cancelled"] = 1
     mocked_api.replace(responses.POST, str(Endpoints.SLOTS), json=calendar)
 
-    assert main(["run", "--config", str(config_path), "--dry-run"]) == 0
+    assert main(["run", "--config", str(config_path), "--dry-run"]) == 1
 
     err = capsys.readouterr().err
     assert "would book" not in err
-    assert "DRY RUN: 'Gimnasio' on Friday 2030-01-04 at 12:00 is cancelled, so booking it would fail." in err
+    assert "after 1 attempt(s): Slot 5004 is cancelled, so booking it would fail." in err
+    assert "Gimnasio  Friday 2030-01-04  12:00  failed  1" in err
     assert _calls(mocked_api, Endpoints.BOOKING) == []
 
 

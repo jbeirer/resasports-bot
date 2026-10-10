@@ -49,6 +49,38 @@ def next_class_date(weekday: int, now: datetime) -> date:
     return now.date() + timedelta(days=days_ahead)
 
 
+def to_monotonic(deadline: datetime, clock: Clock | None = None) -> float:
+    """
+    Convert a wall-clock time to the scale of a monotonic clock.
+
+    Args:
+        deadline: A time zone aware time.
+        clock: The monotonic clock in seconds [default: time.monotonic].
+    """
+    clock = clock or time.monotonic
+    return clock() + deadline.timestamp() - datetime.now(UTC).timestamp()
+
+
+def sleep_until(target: float, *, clock: Clock | None = None, sleep: Sleep | None = None) -> None:
+    """
+    Sleep until a monotonic clock reaches `target`.
+
+    Long waits sleep in chunks of at most 30 seconds and log the remaining time at DEBUG. A target in the past
+    returns at once.
+
+    Args:
+        target: The time to wait for, on the `clock` scale.
+        clock: The monotonic clock in seconds [default: time.monotonic].
+        sleep: The sleep function [default: time.sleep].
+    """
+    clock = clock or time.monotonic
+    sleep = sleep or time.sleep
+    while (remaining := target - clock()) > 0:
+        if remaining > MAX_SLEEP:
+            logger.debug(f"{remaining:.1f} seconds left to wait.")
+        sleep(min(remaining, MAX_SLEEP))
+
+
 def wait_until(deadline: datetime, *, clock: Clock | None = None, sleep: Sleep | None = None) -> float:
     """
     Sleep until a wall-clock time.
@@ -65,10 +97,6 @@ def wait_until(deadline: datetime, *, clock: Clock | None = None, sleep: Sleep |
         The deadline on the `clock` scale, to time later steps from it.
     """
     clock = clock or time.monotonic
-    sleep = sleep or time.sleep
-    target = clock() + deadline.timestamp() - datetime.now(UTC).timestamp()
-    while (remaining := target - clock()) > 0:
-        if remaining > MAX_SLEEP:
-            logger.debug(f"{remaining:.1f} seconds left until {deadline:%Y-%m-%d %H:%M:%S}.")
-        sleep(min(remaining, MAX_SLEEP))
+    target = to_monotonic(deadline, clock)
+    sleep_until(target, clock=clock, sleep=sleep)
     return target

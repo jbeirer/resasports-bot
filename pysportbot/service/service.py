@@ -33,7 +33,7 @@ def run_service(
             temporary, such as a network error.
         retry_delay (float): Delay in seconds after such an error.
         poll_interval (float): Delay in seconds between attempts while a slot is not bookable yet or not found.
-        poll_window (float): How long to keep polling, in seconds after the execution time.
+        poll_window (float): How long to keep polling, in seconds after booking starts.
         time_zone (str): Time zone for the booking.
         log_level (str): Logging level for the service.
         max_threads (int | None): Maximum number of classes booked in parallel. None books all classes in parallel.

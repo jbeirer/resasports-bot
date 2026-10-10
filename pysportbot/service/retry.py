@@ -27,7 +27,7 @@ class RetryPolicy:
             network error. Polls do not count.
         retry_delay: Seconds to wait after such an error.
         poll_interval: Seconds between attempts while the slot is not bookable yet or not found.
-        poll_window: Seconds after the execution time to keep polling.
+        poll_window: Seconds to keep polling after booking starts, i.e. after the execution time and booking delay.
 
     Raises:
         ValueError: If retry_attempts < 1, poll_interval <= 0, or retry_delay or poll_window is negative.

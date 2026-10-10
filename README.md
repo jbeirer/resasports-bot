@@ -229,7 +229,7 @@ Currently supported options include:
 
 1. `--booking-delay`: sets a global delay in seconds after the execution time before booking, must not be negative [default: 0]
 2. `--poll-interval`: sets the delay in seconds between attempts while a slot is not bookable yet or not found, must be positive [default: 0.5]
-3. `--poll-window`: sets how long to keep polling, in seconds after the execution time, must not be negative [default: 60]
+3. `--poll-window`: sets how long to keep polling, in seconds after booking starts, must not be negative [default: 60]
 4. `--retry-attempts`: sets the maximum number of attempts per class that fail with an error that may be temporary, such as a network error, must be at least 1 [default: 3]
 5. `--retry-delay`: sets the delay in seconds after such an error, must not be negative [default: 5]
 6. `--time-zone`: sets the time zone for the service [default: Europe/Madrid]
@@ -246,20 +246,20 @@ If the configuration or an option is invalid, the service prints the problems wi
 Popular classes fill up within seconds of the booking window opening, so the service prepares ahead and keeps trying fast at the opening moment:
 
 ```text
-T-60 s     log in again if the session expired, and look up the slots
+T-60 s     log in again if the session expired (retrying on failure), and look up each slot
 T          book: one request per class, all classes at once
 T…T+60 s   try again every 0.5 s while a slot is "not bookable yet"
 ```
 
-Here `T` is the `booking_execution` time, plus `--booking-delay` for the booking itself, and the polling stops after `--poll-window` seconds.
-If a slot cannot be found at `T-60 s`, e.g. because the calendar is not published yet, it is looked up again when booking.
+Here `T` is the `booking_execution` time plus `--booking-delay`, and the polling stops `--poll-window` seconds after `T`.
+Each class looks up its own slot, so a slow lookup does not delay the other classes. If a slot cannot be found at `T-60 s`, e.g. because the calendar is not published yet, it is looked up again when booking.
 With `"booking_execution": "now"` the service books at once.
 
 What the service does after a failed attempt depends on the error:
 
 | Error | What happens | Result |
 |-------|--------------|--------|
-| Not bookable yet, not available, or slot not found | Try again every `--poll-interval` seconds until `--poll-window` seconds after the execution time. Polls do not count as retry attempts | `failed` or `not found` once the window ends |
+| Not bookable yet, not available, or slot not found | Try again every `--poll-interval` seconds for `--poll-window` seconds after booking starts. Polls do not count as retry attempts | `failed` or `not found` once the window ends |
 | Network error, unexpected API response or unknown error code | Try again after `--retry-delay` seconds, up to `--retry-attempts` attempts | `failed` after the last attempt |
 | Already booked | Stop. This includes a booking that timed out but went through: the next attempt finds it already booked | `already booked` |
 | Full | Stop | `full` |
