@@ -1,13 +1,19 @@
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import requests
 
 from pysportbot import SportBot
-from pysportbot.exceptions import SlotAlreadyBookedError, SlotFullError, SlotNotFoundError, SportBotError
+from pysportbot.exceptions import (
+    BookingError,
+    SlotAlreadyBookedError,
+    SlotFullError,
+    SlotNotFoundError,
+    SportBotError,
+)
 from pysportbot.models import Slot
 
 from .config import ClassSpec, ServiceConfig
@@ -49,7 +55,8 @@ def attempt_booking(
         start: The time zone aware start time of the class.
         policy: When to try again [default: RetryPolicy()].
         slot: The slot, if found ahead of time. Each attempt is then a single booking request; otherwise each attempt
-            looks the slot up first.
+            looks the slot up first. A slot that is listed as full then gets a single booking request, which tells
+            "full" apart from "already booked by the user".
         poll_until: The `clock` time when polling ends [default: `policy.poll_window` seconds from now].
         dry_run: Find the slot and check that it is open, but send no booking request.
         clock: The monotonic clock in seconds [default: time.monotonic].
@@ -70,16 +77,18 @@ def attempt_booking(
             booked = _book_once(bot, spec.activity, start, slot, dry_run=dry_run)
         except Exception as error:
             action = classify(error)
-            if action == "poll" and clock() < poll_until:
+            # Read the clock once, so that the sleep below cannot be negative
+            poll_time_left = poll_until - clock()
+            if action == "poll" and poll_time_left > 0:
                 polls += 1
                 if polls == 1:
                     logger.info(
                         f"{error} Trying {what} again every {policy.poll_interval:g} s "
-                        f"for up to {poll_until - clock():.0f} s."
+                        f"for up to {poll_time_left:.0f} s."
                     )
                 else:
                     logger.debug(f"Attempt {attempts} to book {what} failed: {error}")
-                sleep(min(policy.poll_interval, poll_until - clock()))
+                sleep(min(policy.poll_interval, poll_time_left))
                 continue
             if action == "retry":
                 failures += 1
@@ -103,8 +112,28 @@ def _book_once(bot: SportBot, activity: str, start: datetime, slot: Slot | None,
     if dry_run:
         return _dry_run_booking(bot, activity, start, slot)
     if slot is None:
-        return bot.book(activity=activity, start=start)
+        slot = bot.find_slot(activity=activity, start=start)
+        if slot.is_full:
+            return _book_full_slot(bot, slot)
     return bot.book_slot(slot)
+
+
+def _book_full_slot(bot: SportBot, slot: Slot) -> Slot:
+    """
+    Try once to book a slot that was just listed as full, in case one of its places is already the user's.
+
+    Raises:
+        SlotAlreadyBookedError: If the user holds one of the places.
+        SlotFullError: If the API refuses the booking otherwise. Which error code it sends for a full slot is
+            unknown, so a code that would be polled, such as "not available", must not be.
+        APIError, requests.RequestException: If the request fails.
+    """
+    try:
+        return bot.book_slot(slot)
+    except SlotAlreadyBookedError:
+        raise
+    except BookingError:
+        raise SlotFullError(str(slot.id)) from None
 
 
 def _give_up(
@@ -204,15 +233,15 @@ def _book_class(
     start: datetime,
     policy: RetryPolicy,
     *,
-    look_up: bool,
+    lookup: Future[Slot | None] | None,
     booking_start: float,
     dry_run: bool,
     clock: Clock,
     sleep: Sleep,
 ) -> BookingResult:
-    """Look up the slot first if `look_up`, wait until `booking_start` on the `clock` scale, then book."""
-    # Each class looks up its own slot, so that a slow lookup cannot delay the booking of the other classes
-    slot = _look_up(bot, spec, start) if look_up else None
+    """Wait for the slot lookup ahead of time, if any, and until `booking_start` on the `clock` scale, then book."""
+    # Only this class waits for its lookup, so that a slow lookup cannot delay the booking of the other classes
+    slot = lookup.result() if lookup is not None else None
     sleep_until(booking_start, clock=clock, sleep=sleep)
     # A class queued behind --max-threads starts late, but still gets the full poll window
     return attempt_booking(
@@ -294,7 +323,11 @@ def schedule_bookings(
     if prepare:
         _relogin(bot, policy, deadline=booking_start, clock=clock, sleep=sleep)
 
-    with ThreadPoolExecutor(max_workers=max_threads) as executor:
+    # Look up all slots at once, whatever --max-threads: it caps the bookings, and lookups are single requests
+    with (
+        ThreadPoolExecutor(max_workers=len(bookings), thread_name_prefix="lookup") as lookups,
+        ThreadPoolExecutor(max_workers=max_threads) as executor,
+    ):
         futures = [
             executor.submit(
                 _book_class,
@@ -302,7 +335,7 @@ def schedule_bookings(
                 cls,
                 start,
                 policy,
-                look_up=prepare,
+                lookup=lookups.submit(_look_up, bot, cls, start) if prepare else None,
                 booking_start=booking_start,
                 dry_run=dry_run,
                 clock=clock,

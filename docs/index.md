@@ -261,7 +261,7 @@ What the service does after a failed attempt depends on the error:
 | Not bookable yet, not available, or slot not found | Try again every `--poll-interval` seconds for `--poll-window` seconds after booking starts. Polls do not count as retry attempts | `failed` or `not found` once the window ends |
 | Network error, unexpected API response or unknown error code | Try again after `--retry-delay` seconds, up to `--retry-attempts` attempts | `failed` after the last attempt |
 | Already booked | Stop. This includes a booking that timed out but went through: the next attempt finds it already booked | `already booked` |
-| Full | Stop | `full` |
+| Full | Send one booking request, in case one of the places is already yours, then stop | `full`, or `already booked` |
 
 At the end, the service logs a summary with the status and the number of attempts of each class.
 It exits with code `0` if every class is `booked` or `already booked` (or would be booked in a `--dry-run`), and with code `1` otherwise, so that a failed booking is easy to spot, e.g. in a scheduled GitHub Actions run.

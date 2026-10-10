@@ -1,3 +1,4 @@
+import itertools
 import json
 import threading
 from datetime import datetime, time, timedelta
@@ -184,6 +185,23 @@ def test_last_poll_happens_at_end_of_poll_window(attempt, mocked_api, fake_clock
     assert result.attempts == 4
 
 
+def test_deadline_passing_between_clock_reads_does_not_crash(offline_bot, mocked_api):
+    _answer_bookings(mocked_api, NOT_BOOKABLE_YET)
+    # Just before the deadline on the first read, past it on any later read
+    clock = MagicMock(side_effect=itertools.chain([0.9], itertools.repeat(1.1)))
+    sleeps = []
+
+    def sleep(seconds):
+        if seconds < 0:
+            raise ValueError("sleep length must be non-negative")  # As time.sleep
+        sleeps.append(seconds)
+
+    result = attempt_booking(offline_bot, GYM, OPEN_SLOT_START, POLICY, poll_until=1.0, clock=clock, sleep=sleep)
+
+    assert result.status == BookingStatus.FAILED
+    assert sleeps == [pytest.approx(0.1)]
+
+
 def test_stops_when_already_booked(attempt, mocked_api):
     _answer_bookings(mocked_api, ALREADY_BOOKED)
 
@@ -257,12 +275,33 @@ def test_slot_not_found_after_poll_window(attempt, mocked_api):
     assert _booking_calls(mocked_api) == []
 
 
-def test_stops_when_slot_full(attempt, mocked_api):
+def test_stops_when_slot_full(attempt, mocked_api, full_slot_refused):
     result, sleep = attempt(start=FULL_SLOT_START)
 
     assert result.status == BookingStatus.FULL
     assert result.attempts == 1
-    assert _booking_calls(mocked_api) == []
+    # One request, in case one of the places is the user's
+    assert len(_booking_calls(mocked_api)) == 1
+    sleep.assert_not_called()
+
+
+def test_full_slot_already_booked_by_user(attempt, mocked_api):
+    _answer_bookings(mocked_api, ALREADY_BOOKED)
+
+    result, _ = attempt(start=FULL_SLOT_START)
+
+    assert result.status == BookingStatus.ALREADY_BOOKED
+    assert len(_booking_calls(mocked_api)) == 1
+
+
+def test_full_slot_is_not_polled(attempt, mocked_api):
+    # The API's error code for a full slot is unknown, and "not available" would otherwise be polled
+    _answer_bookings(mocked_api, UNAVAILABLE)
+
+    result, sleep = attempt(start=FULL_SLOT_START)
+
+    assert result.status == BookingStatus.FULL
+    assert result.attempts == 1
     sleep.assert_not_called()
 
 
@@ -288,7 +327,7 @@ def test_dry_run_sends_no_booking(attempt, mocked_api):
 
 def test_unexpected_error_fails_without_raising(fake_clock, pysportbot_caplog):
     bot = MagicMock()
-    bot.book.side_effect = RuntimeError("bug")
+    bot.find_slot.side_effect = RuntimeError("bug")
 
     result = attempt_booking(bot, GYM, OPEN_SLOT_START, POLICY, clock=fake_clock.monotonic, sleep=fake_clock.sleep)
 
@@ -467,6 +506,38 @@ def test_booking_delay_does_not_shorten_poll_window(offline_bot, mocked_api, fro
     assert results[0].status == BookingStatus.FAILED
 
 
+def test_max_threads_does_not_delay_lookups(frozen_now, mock_time):
+    classes = tuple(ClassSpec(name, FRIDAY, time(9 + i, 0)) for i, name in enumerate(("A", "B", "C")))
+    config = ServiceConfig(
+        email="user@example.com",
+        password="password",
+        centre="test-centre",
+        execution=WeeklyTime(FRIDAY, time(7, 40)),
+        classes=classes,
+    )
+    looked_up = []
+    all_looked_up = threading.Event()
+    waited = []
+
+    def find_slot(activity, start):
+        looked_up.append(activity)
+        if len(looked_up) == len(classes):
+            all_looked_up.set()
+        return activity
+
+    def book_slot(slot):
+        # With a single booking thread, B and C would only be looked up after A is booked
+        waited.append(all_looked_up.wait(timeout=5))
+        return slot
+
+    bot = MagicMock(**{"find_slot.side_effect": find_slot, "book_slot.side_effect": book_slot})
+
+    results = schedule_bookings(bot, config, POLICY, max_threads=1)
+
+    assert waited == [True, True, True]
+    assert [r.status for r in results] == [BookingStatus.BOOKED] * 3
+
+
 def test_class_queued_behind_max_threads_gets_full_poll_window(frozen_now, mock_time, fake_clock):
     first, second = ClassSpec("First", FRIDAY, time(9, 0)), ClassSpec("Second", FRIDAY, time(12, 0))
     config = ServiceConfig(
@@ -528,12 +599,14 @@ def test_schedule_bookings_now_books_at_once(frozen_now, mock_time):
 
     # Logged in just now, so no re-login and no lookup ahead of time
     bot.ensure_logged_in.assert_not_called()
-    bot.find_slot.assert_not_called()
-    bot.book.assert_called_once_with(activity="Gimnasio", start=OPEN_SLOT_START)
+    bot.find_slot.assert_called_once_with(activity="Gimnasio", start=OPEN_SLOT_START)
+    bot.book_slot.assert_called_once_with(bot.find_slot.return_value)
     mock_time.sleep.assert_not_called()
 
 
-def test_schedule_bookings_returns_results_in_config_order(offline_bot, mocked_api, frozen_now, mock_time):
+def test_schedule_bookings_returns_results_in_config_order(
+    offline_bot, mocked_api, frozen_now, mock_time, full_slot_refused
+):
     config = ServiceConfig(
         email="user@example.com",
         password="password",

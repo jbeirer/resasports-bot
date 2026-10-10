@@ -4,6 +4,7 @@ import threading
 from datetime import datetime, tzinfo
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+from urllib.parse import parse_qs
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -79,6 +80,18 @@ def mocked_api():
         rsps.add(responses.POST, str(Endpoints.BOOKING), json={"success": True})
         rsps.add(responses.POST, str(Endpoints.CANCELLATION), json={"success": True})
         yield rsps
+
+
+@pytest.fixture
+def full_slot_refused(mocked_api):
+    """Refuse to book the fixture's full Gimnasio slot 5002 with an unknown error code, and book any other slot."""
+
+    def callback(request):
+        full = parse_qs(request.body)["id_activity_calendar"] == ["5002"]
+        return 200, {}, json.dumps({"success": False, "error": 99} if full else {"success": True})
+
+    mocked_api.remove(responses.POST, str(Endpoints.BOOKING))
+    mocked_api.add_callback(responses.POST, str(Endpoints.BOOKING), callback=callback)
 
 
 @pytest.fixture

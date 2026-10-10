@@ -338,7 +338,9 @@ def _write_classes(path, *classes):
     )
 
 
-def test_run_exits_1_if_a_class_is_not_booked(mocked_api, mock_time, frozen_now, config_path, credentials_env, capsys):
+def test_run_exits_1_if_a_class_is_not_booked(
+    mocked_api, mock_time, frozen_now, config_path, credentials_env, full_slot_refused, capsys
+):
     _write_classes(config_path, ("Gimnasio", "12:00"), ("Gimnasio", "10:00"))  # Open and full
 
     assert main(["run", "--config", str(config_path)]) == 1
@@ -405,7 +407,7 @@ def test_service_alias_runs_run_command(mocked_api, mock_time, frozen_now, confi
 
 
 def test_service_alias_exits_1_if_a_class_is_not_booked(
-    mocked_api, mock_time, frozen_now, config_path, credentials_env
+    mocked_api, mock_time, frozen_now, config_path, credentials_env, full_slot_refused
 ):
     _write_config(config_path, "10:00")  # The fixture's full Gimnasio slot
 
