@@ -196,8 +196,7 @@ def test_parse_day_rejects_invalid_days(value):
 def test_book(mocked_api, credentials_env, capsys):
     assert main(["book", "Gimnasio", "2030-01-04 12:00"]) == 0
 
-    # The fixture lists 10/30 places taken before the booking
-    assert capsys.readouterr().out == "Booked 'Gimnasio' on 2030-01-04 12:00 (11/30)\n"
+    assert capsys.readouterr().out == "Booked 'Gimnasio' on 2030-01-04 12:00\n"
     assert len(_calls(mocked_api, Endpoints.BOOKING)) == 1
 
 
@@ -236,7 +235,7 @@ def test_login_failure_exits_1_without_traceback(mocked_api, credentials_env, ca
 def test_cancel(mocked_api, credentials_env, capsys):
     assert main(["cancel", "Yoga", "2030-01-04 18:00"]) == 0
 
-    assert capsys.readouterr().out == "Cancelled 'Yoga' on 2030-01-04 18:00 (1/15)\n"
+    assert capsys.readouterr().out == "Cancelled 'Yoga' on 2030-01-04 18:00\n"
     assert len(_calls(mocked_api, Endpoints.CANCELLATION)) == 1
 
 
@@ -311,6 +310,46 @@ def test_run_dry_run_sends_no_booking(mocked_api, mock_time, frozen_now, config_
     assert "DRY RUN: would book 'Gimnasio' on Friday 2030-01-04 at 12:00 (slot 5004, 10/30 places taken)." in err
     # run logs at INFO by default
     assert "[INFO]" in err
+
+
+def _write_config(path, class_time):
+    path.write_text(
+        json.dumps({"classes": [{"activity": "Gimnasio", "class_day": "Friday", "class_time": class_time}]})
+    )
+
+
+def test_run_dry_run_reports_full_slot(mocked_api, mock_time, frozen_now, config_path, credentials_env, capsys):
+    _write_config(config_path, "10:00")  # The fixture's full Gimnasio slot
+
+    assert main(["run", "--config", str(config_path), "--dry-run", "--retry-attempts", "3"]) == 0
+
+    err = capsys.readouterr().err
+    assert "would book" not in err
+    assert "Slot 5002 is full and cannot be booked. Skipping further retries." in err
+    assert _calls(mocked_api, Endpoints.BOOKING) == []
+
+
+def test_run_dry_run_reports_cancelled_slot(
+    mocked_api, mock_time, frozen_now, config_path, credentials_env, payloads, capsys
+):
+    calendar = payloads["activities_calendar"]
+    entry = next(e for e in calendar["data"]["activities_calendar"] if e["id_activity_calendar"] == 5004)
+    entry["cancelled"] = 1
+    mocked_api.replace(responses.POST, str(Endpoints.SLOTS), json=calendar)
+
+    assert main(["run", "--config", str(config_path), "--dry-run"]) == 0
+
+    err = capsys.readouterr().err
+    assert "would book" not in err
+    assert "DRY RUN: 'Gimnasio' on Friday 2030-01-04 at 12:00 is cancelled, so booking it would fail." in err
+    assert _calls(mocked_api, Endpoints.BOOKING) == []
+
+
+def test_main_removes_traceback_filter_when_done(mocked_api):
+    assert main(["centres"]) == 0
+
+    handler = next(h for h in logging.getLogger("pysportbot").handlers if hasattr(h, "_pysportbot_handler"))
+    assert handler.filters == []
 
 
 def test_service_alias_runs_run_command(mocked_api, mock_time, frozen_now, config_path, credentials_env):

@@ -48,7 +48,7 @@ With [uv](https://docs.astral.sh/uv/), `uvx pysportbot centres` runs the command
 
 - **Password:** there is no `--password` flag, because it would end up in your shell history and in the process list. The password comes from `SPORTBOT_PASSWORD`, or from a prompt when you run the command in a terminal.
 - **Global options:** `--log-level` [default: `WARNING`, so you only see the result; `INFO` for `run`] and `--time-zone` of the centre [default: `Europe/Madrid`] go before or after the command.
-- **Exit codes:** `0` on success, `1` if the operation fails (e.g. the slot is already booked), `2` for invalid arguments, configuration or missing credentials, and `130` if interrupted. Errors are printed without a traceback; `--log-level DEBUG` adds it.
+- **Exit codes:** `0` on success, `1` if the operation fails (e.g. the slot is already booked), `2` for invalid arguments, configuration or missing credentials, and `130` if interrupted. Errors are printed without a traceback; `--log-level DEBUG` adds it. For `run`, failed bookings do not change the exit code yet: it is `0` even if no class could be booked.
 
 Run `pysportbot --help` or `pysportbot <command> --help` for all options.
 
@@ -227,7 +227,7 @@ Currently supported options include:
 4. `--time-zone`: sets the time zone for the service [default: Europe/Madrid]
 5. `--log-level`: sets the log-level of the service [default: INFO]
 6. `--max-threads`: caps the number of classes booked in parallel, must be a positive integer [default: no cap]
-7. `--dry-run`: does everything, including logging in, waiting until the execution time and finding the slots, but sends no booking requests
+7. `--dry-run`: does everything, including logging in, waiting until the execution time and checking that the slots exist and are neither full nor cancelled, but sends no booking requests. The real booking can still fail, e.g. if a slot fills up in the meantime. With `"booking_execution": "now"` it runs immediately, as a quick check of your configuration.
 
 If the configuration or an option is invalid, the service prints the problems without a traceback and exits with code 2.
 

@@ -257,16 +257,14 @@ def _cmd_slots(args: argparse.Namespace) -> int:
 
 def _cmd_book(args: argparse.Namespace) -> int:
     slot = _login(args).book(args.activity, args.start)
-    # The slot is as listed before the booking, so count the new booking
-    print(f"Booked '{slot.activity_name}' on {_format_time(slot.start)} ({slot.inscribed + 1}/{slot.capacity})")
+    # No places count: the slot is as listed before the booking, so its counts are already stale
+    print(f"Booked '{slot.activity_name}' on {_format_time(slot.start)}")
     return EXIT_OK
 
 
 def _cmd_cancel(args: argparse.Namespace) -> int:
     slot = _login(args).cancel(args.activity, args.start)
-    # The slot is as listed before the cancellation, so uncount the cancelled booking
-    taken = max(slot.inscribed - 1, 0)
-    print(f"Cancelled '{slot.activity_name}' on {_format_time(slot.start)} ({taken}/{slot.capacity})")
+    print(f"Cancelled '{slot.activity_name}' on {_format_time(slot.start)}")
     return EXIT_OK
 
 
@@ -379,7 +377,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--dry-run",
         action="store_true",
-        help="Do everything, including waiting and finding the slots, but send no booking request.",
+        help=(
+            "Do everything, including waiting and checking that the slots exist and are open, but send no booking "
+            "request. The real booking can still fail, e.g. if the slot fills up first."
+        ),
     )
     run.set_defaults(handler=_cmd_run)
 
@@ -415,9 +416,8 @@ def main(argv: list[str] | None = None) -> int:
 
     args.log_level = args.log_level or ("INFO" if args.command == "run" else "WARNING")
     configure_logging(args.log_level, timezone=args.time_zone)
-    debug = args.log_level == "DEBUG"
-    _hide_expected_tracebacks(not debug)
-
+    # Only while the command runs, so callers of main() keep their library tracebacks afterwards
+    _hide_expected_tracebacks(args.log_level != "DEBUG")
     try:
         exit_code: int = args.handler(args)
     except KeyboardInterrupt:
@@ -430,4 +430,6 @@ def main(argv: list[str] | None = None) -> int:
         logger.debug("The operation failed.", exc_info=True)
         print(f"pysportbot: error: {e}", file=sys.stderr)
         return EXIT_FAILURE
+    finally:
+        _hide_expected_tracebacks(False)
     return exit_code
