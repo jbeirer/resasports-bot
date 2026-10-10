@@ -1,3 +1,4 @@
+import json
 import re
 from urllib.parse import parse_qs, urlsplit
 
@@ -22,6 +23,9 @@ def _without(payload: dict, key: str) -> dict:
 
 def test_login_success(auth, mocked_api, payloads):
     auth.login("user@example.com", "password")
+
+    [login_call] = [c for c in mocked_api.calls if c.request.url == str(Endpoints.USER_LOGIN)]
+    assert json.loads(login_call.request.body) == {"username": "user@example.com", "password": "password"}
 
     login_app = payloads["user_login"]["applications"][0]
     assert auth.authenticated is True

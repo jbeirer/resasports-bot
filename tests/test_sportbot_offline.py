@@ -1,4 +1,5 @@
 import re
+from urllib.parse import parse_qs
 
 import pytest
 import responses
@@ -10,6 +11,7 @@ from pysportbot.utils.errors import ErrorMessages
 DAY = "2030-01-04"
 FULL_SLOT = f"{DAY} 10:00:00"  # Gimnasio, n_inscribed == n_capacity
 OPEN_SLOT = f"{DAY} 12:00:00"  # Gimnasio, places left
+OPEN_SLOT_ID = "5004"
 
 SWALLOWED_ERRORS = "SportBot.book/cancel swallow booking errors; fixed in PR-03"
 
@@ -43,7 +45,9 @@ def test_book_full_slot_raises_without_request(offline_bot, mocked_api):
 def test_book_success_sends_one_request(offline_bot, mocked_api):
     offline_bot.book("Gimnasio", OPEN_SLOT)
 
-    assert len(_calls_to(mocked_api, Endpoints.BOOKING)) == 1
+    calls = _calls_to(mocked_api, Endpoints.BOOKING)
+    assert len(calls) == 1
+    assert parse_qs(calls[0].request.body)["id_activity_calendar"] == [OPEN_SLOT_ID]
 
 
 @pytest.mark.xfail(strict=True, reason=SWALLOWED_ERRORS)
@@ -65,7 +69,9 @@ def test_cancel_propagates_api_error(offline_bot, mocked_api):
 def test_cancel_success_sends_one_request(offline_bot, mocked_api):
     offline_bot.cancel("Gimnasio", OPEN_SLOT)
 
-    assert len(_calls_to(mocked_api, Endpoints.CANCELLATION)) == 1
+    calls = _calls_to(mocked_api, Endpoints.CANCELLATION)
+    assert len(calls) == 1
+    assert parse_qs(calls[0].request.body)["id_activity_calendar"] == [OPEN_SLOT_ID]
 
 
 def test_cancel_unknown_time_raises(offline_bot):

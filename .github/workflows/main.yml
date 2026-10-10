@@ -10,6 +10,9 @@ on:
     - cron: '0 0 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   quality:
     if: github.event_name != 'schedule'
@@ -54,12 +57,17 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   test-live:
-    # Fork PRs have no access to secrets
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Fork and Dependabot PRs have no access to the repository secrets
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login != 'dependabot[bot]')
     runs-on: ubuntu-latest
     steps:
       - name: Check out
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up the environment
         uses: ./.github/actions/setup-uv-env
@@ -71,7 +79,15 @@ jobs:
           SPORTBOT_EMAIL: ${{ secrets.SPORTBOT_EMAIL }}
           SPORTBOT_PASSWORD: ${{ secrets.SPORTBOT_PASSWORD }}
           SPORTBOT_CENTRE: ${{ secrets.SPORTBOT_CENTRE }}
-        run: make test-live
+        run: |
+          # Fail instead of silently skipping when the secrets are not configured
+          for var in SPORTBOT_EMAIL SPORTBOT_PASSWORD SPORTBOT_CENTRE; do
+            if [ -z "${!var}" ]; then
+              echo "::error::$var is not set"
+              exit 1
+            fi
+          done
+          make test-live
 
   check-docs:
     if: github.event_name != 'schedule'

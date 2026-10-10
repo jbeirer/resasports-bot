@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 from urllib.parse import parse_qs
 
 import pytest
@@ -32,6 +33,17 @@ def test_fetch_dedupes_by_id_activity(activities, payloads):
     assert len(calendar) > len(unique_ids), "fixture should contain duplicate id_activity values"
     assert list(df.columns) == ACTIVITY_COLUMNS
     assert df["id_activity"].tolist() == unique_ids
+
+
+def test_fetch_sends_user_and_week_window(activities, mocked_api, payloads):
+    activities.fetch()
+
+    body = parse_qs(_slots_calls(mocked_api)[-1].request.body)
+    login_app = payloads["user_login"]["applications"][0]
+    assert body["id_application"] == [str(login_app["id_application"])]
+    assert body["id_user"] == [str(login_app["id_user"])]
+    [start], [end] = body["start_timestamp"], body["end_timestamp"]
+    assert date.fromisoformat(end) - date.fromisoformat(start) == timedelta(days=7)
 
 
 def test_fetch_empty_calendar(activities, mocked_api):
@@ -70,15 +82,21 @@ def test_daily_slots_filters_to_activity(activities, payloads):
     assert df["id_activity_calendar"].tolist() == expected
 
 
-def test_daily_slots_sends_category(activities, mocked_api, payloads):
+def test_daily_slots_request_body(activities, mocked_api, payloads):
     df_activities = activities.fetch()
 
     activities.daily_slots(df_activities, "Yoga", DAY)
 
     calendar = payloads["activities_calendar"]["data"]["activities_calendar"]
     yoga_category = next(s["id_category_activity"] for s in calendar if s["name_activity"] == "Yoga")
-    body = parse_qs(_slots_calls(mocked_api)[-1].request.body)
-    assert body["id_category_activity"] == [str(yoga_category)]
+    login_app = payloads["user_login"]["applications"][0]
+    assert parse_qs(_slots_calls(mocked_api)[-1].request.body) == {
+        "id_application": [str(login_app["id_application"])],
+        "id_user": [str(login_app["id_user"])],
+        "start_timestamp": [DAY],
+        "end_timestamp": [DAY],
+        "id_category_activity": [str(yoga_category)],
+    }
 
 
 def test_daily_slots_unknown_activity_raises(activities):
