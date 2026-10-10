@@ -1,8 +1,9 @@
 import json
 import logging
-from datetime import datetime
+import threading
+from datetime import datetime, tzinfo
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -93,18 +94,51 @@ def offline_bot(mocked_api, centre_slug) -> SportBot:
     return bot
 
 
+class FakeClock:
+    """
+    A clock that only moves when `sleep()` is called, so waiting takes no real time.
+
+    `monotonic()` starts at 0 and `now()` at `start`, and both move together.
+    """
+
+    def __init__(self, start: datetime = FROZEN_NOW) -> None:
+        self.start = start
+        self.elapsed = 0.0
+        self._lock = threading.Lock()
+
+    def monotonic(self) -> float:
+        return self.elapsed
+
+    def sleep(self, seconds: float) -> None:
+        assert seconds >= 0
+        with self._lock:
+            self.elapsed += seconds
+
+    def now(self, tz: tzinfo | None = None) -> datetime:
+        return datetime.fromtimestamp(self.start.timestamp() + self.elapsed, tz or self.start.tzinfo)
+
+
 @pytest.fixture
-def frozen_now():
-    """Freeze the service's clock at FROZEN_NOW."""
-    with patch("pysportbot.service.booking.datetime", wraps=datetime) as mock_datetime:
-        mock_datetime.now.return_value = FROZEN_NOW
+def fake_clock() -> FakeClock:
+    return FakeClock()
+
+
+@pytest.fixture
+def frozen_now(fake_clock):
+    """Start the service's wall clock at FROZEN_NOW. It only moves with the sleeps of `mock_time`."""
+    with (
+        patch("pysportbot.service.booking.datetime", wraps=datetime) as booking_datetime,
+        patch("pysportbot.service.scheduling.datetime", wraps=datetime) as scheduling_datetime,
+    ):
+        booking_datetime.now.side_effect = fake_clock.now
+        scheduling_datetime.now.side_effect = fake_clock.now
         yield
 
 
 @pytest.fixture
-def mock_time():
-    """Make the service's sleeps return immediately."""
-    with patch("pysportbot.service.booking.time") as mock:
+def mock_time(fake_clock):
+    """Replace the service's `time` module with `fake_clock`, recording the calls, so sleeps take no real time."""
+    with patch("pysportbot.service.booking.time", MagicMock(wraps=fake_clock)) as mock:
         yield mock
 
 

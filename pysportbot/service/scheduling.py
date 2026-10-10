@@ -1,6 +1,17 @@
-from datetime import date, datetime, timedelta
+import logging
+import time
+from collections.abc import Callable
+from datetime import UTC, date, datetime, timedelta
 
 from .config import WeeklyTime
+
+logger = logging.getLogger(__name__)
+
+# Longest single sleep while waiting, so that long waits log their progress
+MAX_SLEEP = 30.0
+
+Clock = Callable[[], float]
+Sleep = Callable[[float], None]
 
 
 def next_execution(execution: WeeklyTime | None, now: datetime) -> datetime:
@@ -36,3 +47,28 @@ def next_class_date(weekday: int, now: datetime) -> date:
     """
     days_ahead = (weekday - now.weekday()) % 7 or 7
     return now.date() + timedelta(days=days_ahead)
+
+
+def wait_until(deadline: datetime, *, clock: Clock | None = None, sleep: Sleep | None = None) -> float:
+    """
+    Sleep until a wall-clock time.
+
+    The deadline is converted to the monotonic clock once, so wall-clock adjustments during the wait do not move it.
+    Long waits sleep in chunks of at most 30 seconds and log the remaining time at DEBUG.
+
+    Args:
+        deadline: A time zone aware time. A time in the past returns at once.
+        clock: The monotonic clock in seconds [default: time.monotonic].
+        sleep: The sleep function [default: time.sleep].
+
+    Returns:
+        The deadline on the `clock` scale, to time later steps from it.
+    """
+    clock = clock or time.monotonic
+    sleep = sleep or time.sleep
+    target = clock() + deadline.timestamp() - datetime.now(UTC).timestamp()
+    while (remaining := target - clock()) > 0:
+        if remaining > MAX_SLEEP:
+            logger.debug(f"{remaining:.1f} seconds left until {deadline:%Y-%m-%d %H:%M:%S}.")
+        sleep(min(remaining, MAX_SLEEP))
+    return target

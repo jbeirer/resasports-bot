@@ -1,23 +1,20 @@
 from dataclasses import replace
 from datetime import datetime, time, timedelta
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
 import pytest
-import requests
-import responses
 
 from pysportbot.endpoints import Endpoints
-from pysportbot.service.booking import attempt_booking, schedule_bookings
+from pysportbot.service.booking import schedule_bookings
 from pysportbot.service.config import ClassSpec, ServiceConfig, WeeklyTime, load_config
+from pysportbot.service.results import BookingStatus
+from pysportbot.service.retry import RetryPolicy
 from pysportbot.service.scheduling import next_execution
 from pysportbot.service.service import run_service
 
 MADRID = ZoneInfo("Europe/Madrid")
 FRIDAY, SUNDAY = 4, 6
-# The fixture's Gimnasio slots on Friday 2030-01-04
-OPEN_SLOT_START = datetime(2030, 1, 4, 12, 0, tzinfo=MADRID)  # places left
-FULL_SLOT_START = datetime(2030, 1, 4, 10, 0, tzinfo=MADRID)  # n_inscribed == n_capacity
 
 VALID_CONFIG = ServiceConfig(
     email="user@example.com",
@@ -32,99 +29,14 @@ def _booking_calls(mocked_api):
     return [c for c in mocked_api.calls if c.request.url == str(Endpoints.BOOKING)]
 
 
-def _attempt(bot, retry_attempts=3, retry_delay=1):
-    attempt_booking(
-        bot,
-        activity="Gimnasio",
-        start=OPEN_SLOT_START,
-        retry_attempts=retry_attempts,
-        retry_delay=retry_delay,
-    )
-
-
-@pytest.mark.parametrize("error_code", [6, 28])
-def test_attempt_booking_retries_until_success(offline_bot, mocked_api, mock_time, error_code):
-    mocked_api.replace(responses.POST, str(Endpoints.BOOKING), json={"success": False, "error": error_code})
-    mocked_api.add(responses.POST, str(Endpoints.BOOKING), json={"success": True})
-
-    _attempt(offline_bot)
-
-    assert len(_booking_calls(mocked_api)) == 2
-    mock_time.sleep.assert_called_once_with(1)
-
-
-@pytest.mark.parametrize(
-    "error",
-    [
-        pytest.param(requests.exceptions.ReadTimeout("Read timed out."), id="read-timeout"),
-        pytest.param(requests.exceptions.ConnectionError("Connection reset."), id="connection-error"),
-    ],
-)
-def test_attempt_booking_retries_after_network_error(offline_bot, mocked_api, mock_time, error):
-    mocked_api.replace(responses.POST, str(Endpoints.BOOKING), body=error)
-    mocked_api.add(responses.POST, str(Endpoints.BOOKING), json={"success": True})
-
-    _attempt(offline_bot)
-
-    assert len(_booking_calls(mocked_api)) == 2
-    mock_time.sleep.assert_called_once_with(1)
-
-
-@pytest.mark.parametrize(
-    "response_kwargs",
-    [
-        pytest.param({"json": {"success": False, "error": 99}}, id="unknown-error-code"),
-        pytest.param({"status": 500}, id="api-error"),
-    ],
-)
-def test_attempt_booking_retries_after_other_error(offline_bot, mocked_api, mock_time, response_kwargs):
-    mocked_api.replace(responses.POST, str(Endpoints.BOOKING), **response_kwargs)
-    mocked_api.add(responses.POST, str(Endpoints.BOOKING), json={"success": True})
-
-    _attempt(offline_bot)
-
-    assert len(_booking_calls(mocked_api)) == 2
-    mock_time.sleep.assert_called_once_with(1)
-
-
-def test_attempt_booking_retries_when_slot_not_found(offline_bot, mocked_api, mock_time):
-    attempt_booking(offline_bot, activity="Gimnasio", start=OPEN_SLOT_START.replace(hour=23), retry_attempts=3)
-
-    assert _booking_calls(mocked_api) == []
-    assert mock_time.sleep.call_count == 2
-
-
-def test_attempt_booking_retries_when_calendar_empty(offline_bot, mocked_api, mock_time):
-    mocked_api.replace(responses.POST, str(Endpoints.SLOTS), json={"data": {"activities_calendar": []}})
-
-    _attempt(offline_bot)
-
-    assert _booking_calls(mocked_api) == []
-    assert mock_time.sleep.call_count == 2
-
-
-def test_attempt_booking_stops_when_already_booked(offline_bot, mocked_api, mock_time):
-    mocked_api.replace(responses.POST, str(Endpoints.BOOKING), json={"success": False, "error": 5})
-
-    _attempt(offline_bot)
-
-    assert len(_booking_calls(mocked_api)) == 1
-    mock_time.sleep.assert_not_called()
-
-
-def test_attempt_booking_stops_when_slot_full(offline_bot, mocked_api, mock_time):
-    attempt_booking(offline_bot, activity="Gimnasio", start=FULL_SLOT_START, retry_attempts=3)
-
-    assert _booking_calls(mocked_api) == []
-    mock_time.sleep.assert_not_called()
-
-
 @pytest.mark.parametrize(
     "overrides",
     [
         pytest.param({"retry_attempts": 0}, id="retry_attempts=0"),
         pytest.param({"retry_delay": -1}, id="retry_delay<0"),
         pytest.param({"booking_delay": -1}, id="booking_delay<0"),
+        pytest.param({"poll_interval": 0}, id="poll_interval=0"),
+        pytest.param({"poll_window": -1}, id="poll_window<0"),
     ],
 )
 def test_run_service_rejects_invalid_arguments(mocked_api, overrides):
@@ -189,27 +101,29 @@ def test_next_execution_at_ambiguous_dst_time_is_ahead(now_utc, expected_utc):
         pytest.param(datetime(2026, 10, 24, 7, 30), 25, id="fall-back"),
     ],
 )
-def test_schedule_bookings_waits_real_time_across_dst_change(mock_time, now, hours_until_execution):
-    start = now.replace(tzinfo=MADRID)
+def test_schedule_bookings_waits_real_time_across_dst_change(
+    frozen_now, mock_time, fake_clock, now, hours_until_execution
+):
+    fake_clock.start = now.replace(tzinfo=MADRID)
     seconds_until_execution = hours_until_execution * 3600
-    # The clock when the service wakes up to re-authenticate, 60 s before execution
-    reauth_now = datetime.fromtimestamp(start.timestamp() + seconds_until_execution - 60, MADRID)
     config = replace(VALID_CONFIG, execution=WeeklyTime(SUNDAY, time(7, 30)))
+    bot = MagicMock()
+    relogin_times = []
+    bot.ensure_logged_in.side_effect = lambda: relogin_times.append(fake_clock.elapsed)
 
-    with (
-        patch("pysportbot.service.booking.datetime", wraps=datetime) as booking_datetime,
-        patch("pysportbot.service.booking.attempt_booking"),
-    ):
-        booking_datetime.now.side_effect = [start, reauth_now]
-        schedule_bookings(MagicMock(), config, 0, 1, 0, "Europe/Madrid", 1)
+    schedule_bookings(bot, config, RetryPolicy())
 
-    assert mock_time.sleep.call_args_list == [call(seconds_until_execution - 60), call(60)]
+    # Re-authenticate 60 s before execution, and book at execution
+    assert relogin_times == [seconds_until_execution - 60]
+    assert fake_clock.elapsed == seconds_until_execution
+    bot.book_slot.assert_called_once()
 
 
 def test_run_service_books_now_with_env_credentials(mocked_api, mock_time, frozen_now, config_path, credentials_env):
     config = load_config(config_path, env=credentials_env)
 
-    run_service(config, booking_delay=0, retry_attempts=1, retry_delay=0)
+    results = run_service(config, booking_delay=0, retry_attempts=1, retry_delay=0)
 
+    assert [r.status for r in results] == [BookingStatus.BOOKED]
     assert len(_booking_calls(mocked_api)) == 1
     mock_time.sleep.assert_not_called()
