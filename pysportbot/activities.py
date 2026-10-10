@@ -13,8 +13,8 @@ from .utils.time import get_day_bounds
 
 logger = get_logger(__name__)
 
-# The SLOTS endpoint can take well over 10 s to return a multi-day calendar
-SLOTS_READ_TIMEOUT = 60
+# The SLOTS endpoint is slow: a multi-day calendar regularly takes over 10 s and occasionally much longer
+SLOTS_READ_TIMEOUT = 120
 
 
 class Activities:
