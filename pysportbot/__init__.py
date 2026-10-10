@@ -115,35 +115,51 @@ class SportBot:
             # Fetch activities on first successful login
             self._df_activities = self.activities_manager.fetch()
         except Exception:
-            # Clean up on failure
-            self._is_logged_in = False
-            self._df_activities = None
+            self._logout()
             self._logger.exception("Login failed.")
             raise
         self._credentials = (email, password, centre)
+
+    def _logout(self) -> None:
+        """Reset the bot and the authenticator together, so a failed (re-)login leaves no usable token behind."""
+        self._is_logged_in = False
+        self._df_activities = None
+        self._authenticator.reset()
 
     def ensure_logged_in(self) -> None:
         """
         Re-login with the stored credentials if the current session is no longer valid.
 
         Long-running programs can call this before time-critical requests, because the session may expire some time
-        after `login()`. It costs one request when the session is still valid. Otherwise it calls `login()` again with
-        the email, password and centre of the last successful login.
+        after `login()`. It costs one request when the session is still valid. Otherwise it logs in again with the
+        email, password and centre of the last successful `login()`, which the bot keeps in memory for this purpose.
+        A re-login keeps the activities fetched by `login()`, so it does not wait for the slow activities request.
 
         Raises:
             NotLoggedInError: If `login()` has never succeeded.
             AuthenticationError: If the re-login fails.
-            APIError: If fetching the activities after the re-login fails.
+            APIError: If fetching the activities fails, when an earlier login failed and a full login is needed.
         """
         if self._credentials is None:
             raise NotLoggedInError()
 
-        if self._is_logged_in and self._authenticator.is_session_valid():
+        if not self._is_logged_in:
+            # An earlier (re-)login failed, so the activities must be fetched again too
+            self._logger.info("Not logged in. Logging in again...")
+            self.login(*self._credentials)
+            return
+
+        if self._authenticator.is_session_valid():
             self._logger.info("Session still valid. Skipping re-authentication.")
             return
 
         self._logger.info("Session is no longer valid. Logging in again...")
-        self.login(*self._credentials)
+        email, password, _ = self._credentials
+        try:
+            self._authenticator.login(email, password)
+        except Exception:
+            self._logout()
+            raise
 
     def is_logged_in(self) -> bool:
         """Returns the login status."""

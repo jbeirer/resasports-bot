@@ -39,13 +39,13 @@ class Authenticator:
         """
         logger.info("Starting login process...")
         # Never send a stale Nubapp token along with the new login
-        self._reset()
+        self.reset()
         try:
             resasocial_jwt = self._resasocial_login(email, password)
             self._client.set_bearer_token(self._get_sport_user_token(resasocial_jwt))
             self.user_id = self._fetch_user_id()
         except Exception as exc:
-            self._reset()
+            self.reset()
             logger.error(f"Login process failed: {exc}")
             if isinstance(exc, AuthenticationError):
                 raise
@@ -66,7 +66,8 @@ class Authenticator:
             return False
         return isinstance(data, dict) and bool(data.get("user"))
 
-    def _reset(self) -> None:
+    def reset(self) -> None:
+        """Forget the login state and stop sending the Nubapp token."""
         self.authenticated = False
         self.id_user = self.id_application = self.user_id = None
         self._client.set_bearer_token(None)

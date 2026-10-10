@@ -51,7 +51,8 @@ bot.cancel(activity="YourFavouriteGymClass", start_time="2024-12-30 07:00:00")
 
 All `pysportbot` errors derive from `SportBotError`, so you can react to specific failures by type.
 Network failures such as timeouts are not wrapped: they propagate as `requests.RequestException`.
-A request that fails to connect is retried up to twice. A request that may have reached the server, such as a booking that timed out, is never sent again.
+At the HTTP level, a request that fails to connect is retried up to twice, but a request that may have reached the server, such as a booking that timed out, is never re-sent automatically.
+If you retry a timed-out booking yourself and the first request did succeed, the retry raises `SlotAlreadyBookedError`.
 
 ```python
 import requests
