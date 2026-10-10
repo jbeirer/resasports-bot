@@ -40,7 +40,5 @@ def test_book_and_cancel_activity(bot):
 
     assert booked_slot is not None, f"No bookable Gimnasio slots found on {friday_str}"
 
-    # Cancel the booking
+    # Cancel the booking; if cancel fails, an exception should be raised
     bot.cancel("Gimnasio", booked_slot)
-    # Simple success assertion—if cancel fails, an exception should be raised
-    assert True, f"Failed to cancel Gimnasio slot at {booked_slot}"

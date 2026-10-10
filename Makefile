@@ -16,9 +16,14 @@ check: ## Run code quality tools.
 	@uv run deptry .
 
 .PHONY: test
-test: ## Test all and generate code coverage report
-	@echo "🚀 Testing code: Running all tests with code coverage"
+test: ## Run offline tests with coverage
+	@echo "🚀 Testing code: Running offline tests with code coverage"
 	@uv run pytest --cov --cov-config=pyproject.toml --cov-report=xml
+
+.PHONY: test-live
+test-live: ## Run live API tests (needs SPORTBOT_EMAIL/PASSWORD/CENTRE)
+	@echo "🚀 Testing code: Running live API tests"
+	@uv run pytest -m live
 
 test-%: ## Test a specific test case with pytest, e.g. make test-load_geometry
 	@echo "🚀 Testing code: Running the specified test case"

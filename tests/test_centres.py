@@ -1,12 +1,15 @@
 # test_centres.py
 
 import logging  # Import logging to set log levels
+import re
 from unittest.mock import patch
 
 import pandas as pd
 import pytest
 
 from pysportbot import SportBot
+from pysportbot.centres import Centres
+from pysportbot.utils.errors import ErrorMessages
 
 
 @pytest.mark.parametrize(
@@ -115,3 +118,18 @@ def test_print_centres_does_not_output_when_disabled(caplog):
     # Verify that centre slugs are not present in the logs
     assert "centre1" not in logs, "Did not expect 'centre1' to be logged, but it was."
     assert "centre2" not in logs, "Did not expect 'centre2' to be logged, but it was."
+
+
+def test_check_centre_unknown_raises(mocked_api):
+    """`check_centre` rejects a slug that is not in the fetched centre list."""
+    centres = Centres()
+
+    with pytest.raises(ValueError, match=re.escape(ErrorMessages.centre_not_found("unknown"))):
+        centres.check_centre("unknown")
+
+
+def test_check_centre_valid_slug_passes(mocked_api, centre_slug):
+    """`check_centre` accepts a slug returned by the centres endpoint."""
+    centres = Centres()
+
+    centres.check_centre(centre_slug)

@@ -1,0 +1,71 @@
+{
+  "data": {
+    "activities_calendar": [
+      {
+        "name_activity": "Yoga",
+        "id_activity_calendar": 5001,
+        "id_activity": 101,
+        "id_category_activity": 10,
+        "start_timestamp": "2030-01-04 09:00:00",
+        "end_timestamp": "2030-01-04 10:00:00",
+        "n_inscribed": 5,
+        "n_capacity": 15,
+        "n_waiting_list": 0,
+        "cancelled": 0,
+        "trainer_name": "Trainer A"
+      },
+      {
+        "name_activity": "Gimnasio",
+        "id_activity_calendar": 5002,
+        "id_activity": 202,
+        "id_category_activity": 20,
+        "start_timestamp": "2030-01-04 10:00:00",
+        "end_timestamp": "2030-01-04 11:00:00",
+        "n_inscribed": 30,
+        "n_capacity": 30,
+        "n_waiting_list": 0,
+        "cancelled": 0,
+        "trainer_name": "Trainer B"
+      },
+      {
+        "name_activity": "Yoga",
+        "id_activity_calendar": 5003,
+        "id_activity": 101,
+        "id_category_activity": 10,
+        "start_timestamp": "2030-01-04 18:00:00",
+        "end_timestamp": "2030-01-04 19:00:00",
+        "n_inscribed": 2,
+        "n_capacity": 15,
+        "n_waiting_list": 0,
+        "cancelled": 0,
+        "trainer_name": "Trainer A"
+      },
+      {
+        "name_activity": "Gimnasio",
+        "id_activity_calendar": 5004,
+        "id_activity": 202,
+        "id_category_activity": 20,
+        "start_timestamp": "2030-01-04 12:00:00",
+        "end_timestamp": "2030-01-04 13:00:00",
+        "n_inscribed": 10,
+        "n_capacity": 30,
+        "n_waiting_list": 0,
+        "cancelled": 0,
+        "trainer_name": "Trainer B"
+      },
+      {
+        "name_activity": "Pilates",
+        "id_activity_calendar": 5005,
+        "id_activity": 303,
+        "id_category_activity": 10,
+        "start_timestamp": "2030-01-04 19:00:00",
+        "end_timestamp": "2030-01-04 20:00:00",
+        "n_inscribed": 0,
+        "n_capacity": 12,
+        "n_waiting_list": 0,
+        "cancelled": 0,
+        "trainer_name": "Trainer C"
+      }
+    ]
+  }
+}

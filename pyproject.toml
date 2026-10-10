@@ -27,6 +27,7 @@ dev = [
   "pre-commit>=4.6.2",
   "types-pytz>=2026.3.1.20260727",
   "types-requests>=2.33.0.20260712",
+  "responses>=0.26.3",
 ]
 docs = [
   "mkdocs>=1.6.1",
@@ -68,6 +69,8 @@ disallow_any_unimported = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["live: talks to the real Resasports API; needs SPORTBOT_EMAIL/SPORTBOT_PASSWORD/SPORTBOT_CENTRE"]
+addopts = "-m 'not live'"
 # filter deprecation warnings from external packages
 filterwarnings = [
     "ignore::DeprecationWarning:(?!pysportbot).*",
