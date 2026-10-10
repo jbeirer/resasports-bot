@@ -13,30 +13,15 @@ from pysportbot import SportBot
 from pysportbot.cli import main, parse_day
 from pysportbot.endpoints import Endpoints
 from pysportbot.service.__main__ import main as service_main
-from pysportbot.service.config import ENV_VARS
 
 FRIDAY = date(2030, 1, 4)  # The day of the fixture's slots
+
+pytestmark = pytest.mark.usefixtures("cli_env")
 
 
 class FakeTTY(io.StringIO):
     def isatty(self) -> bool:
         return True
-
-
-@pytest.fixture(autouse=True)
-def cli_env(monkeypatch):
-    """
-    Run each test without credentials in the env, without a terminal on stdin, and with a fresh "pysportbot" log
-    handler, which `main()` then binds to the stderr that `capsys` captures.
-    """
-    for name in ENV_VARS.values():
-        monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("NO_COLOR", "1")
-    monkeypatch.setattr(sys, "stdin", io.StringIO())
-    logger = logging.getLogger("pysportbot")
-    monkeypatch.setattr(logger, "handlers", [h for h in logger.handlers if not hasattr(h, "_pysportbot_handler")])
-    monkeypatch.setattr(logger, "level", logger.level)
-    monkeypatch.setattr(logger, "propagate", logger.propagate)
 
 
 @pytest.fixture
