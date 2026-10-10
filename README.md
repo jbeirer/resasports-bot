@@ -1,7 +1,13 @@
-# No queues. Just gains.
+<div align="center" markdown>
 
-<img src=https://github.com/jbeirer/resasports-bot/raw/main/docs/logo.png alt="Logo" width="250">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jbeirer/resasports-bot/main/assets/logo_dark.svg">
+  <img src="https://raw.githubusercontent.com/jbeirer/resasports-bot/main/assets/logo_light.svg" alt="pysportbot logo" width="250">
+</picture>
 
+**No queues. Just gains.**
+
+[Documentation](https://jbeirer.github.io/resasports-bot/) · [PyPI](https://pypi.org/project/pysportbot/) · [Releases](https://github.com/jbeirer/resasports-bot/releases)
 
 [![Release](https://img.shields.io/github/v/release/jbeirer/resasports-bot)](https://github.com/jbeirer/resasports-bot/releases)
 [![Build status](https://img.shields.io/github/actions/workflow/status/jbeirer/resasports-bot/main.yml?branch=main)](https://github.com/jbeirer/resasports-bot/actions/workflows/main.yml?query=branch%3Amain)
@@ -11,6 +17,8 @@
 [![Documentation](https://img.shields.io/badge/api-docs-blue)](https://jbeirer.github.io/resasports-bot/)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg?label=Contributing)](https://github.com/jbeirer/resasports-bot/blob/main/CODE_OF_CONDUCT.md)
 [![Downloads](https://static.pepy.tech/badge/pysportbot)](https://pepy.tech/projects/pysportbot)
+
+</div>
 
 pysportbot books fitness classes at sports centres that use the [Resasports](https://social.resasports.com/en/) booking software.
 You can use it from the command line or from Python, or let it book your weekly classes as soon as bookings open, e.g. from a scheduled GitHub Actions workflow. It can also send you the result on your phone.

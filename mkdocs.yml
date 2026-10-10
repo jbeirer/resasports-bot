@@ -76,6 +76,7 @@ markdown_extensions:
       permalink: true
   - admonition
   - attr_list
+  - md_in_html
   - tables
   - pymdownx.details
   - pymdownx.highlight:
