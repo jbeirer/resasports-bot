@@ -13,6 +13,9 @@ from .utils.time import get_day_bounds
 
 logger = get_logger(__name__)
 
+# The SLOTS endpoint can take well over 10 s to return a multi-day calendar
+SLOTS_READ_TIMEOUT = 60
+
 
 class Activities:
     """Handles activity fetching and slot management."""
@@ -25,8 +28,9 @@ class Activities:
         self.creds = authenticator.creds
         # Headers for requests
         self.headers = authenticator.headers
-        # (connect, read) timeout for requests
-        self.timeout = authenticator.timeout
+        # (connect, read) timeout for requests, with a longer read timeout for the slow SLOTS endpoint
+        connect_timeout, _ = authenticator.timeout
+        self.timeout = (connect_timeout, SLOTS_READ_TIMEOUT)
         # Time zone used to determine "today"
         self.time_zone = time_zone
 

@@ -7,7 +7,7 @@ import pytz
 import responses
 
 from pysportbot import SportBot
-from pysportbot.activities import Activities
+from pysportbot.activities import SLOTS_READ_TIMEOUT, Activities
 from pysportbot.authenticator import Authenticator
 from pysportbot.endpoints import Endpoints
 from pysportbot.session import Session
@@ -184,11 +184,11 @@ def test_sportbot_passes_time_zone_to_activities(mocked_api, centre_slug):
 
 
 @pytest.mark.parametrize("method", ["fetch", "daily_slots"])
-def test_requests_use_authenticator_timeout(activities, method):
+def test_requests_use_slots_timeout(activities, method):
     df_activities = activities.fetch()
     args = (df_activities, "Yoga", DAY) if method == "daily_slots" else ()
 
     with patch.object(activities.session, "post", wraps=activities.session.post) as post:
         getattr(activities, method)(*args)
 
-    assert post.call_args.kwargs["timeout"] == (5, 10)
+    assert post.call_args.kwargs["timeout"] == (5, SLOTS_READ_TIMEOUT)
