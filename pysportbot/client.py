@@ -37,16 +37,20 @@ class ApiClient:
         self.session = requests.Session()
         self.session.headers.update(DEFAULT_HEADERS)
         self.timeout = timeout
+        # (base URL, token): the token is only sent to that service, never to the other one sharing this session
+        self._bearer: tuple[str, str] | None = None
         # Retry only failures where the request never reached the server; never re-send a booking.
         retry = Retry(total=None, connect=2, read=0, status=0, other=0, allowed_methods=None, backoff_factor=0.3)
         self.session.mount("https://", HTTPAdapter(max_retries=retry))
 
-    def set_bearer_token(self, token: str | None) -> None:
-        """Send `Authorization: Bearer <token>` with every request, or stop sending it if `token` is None."""
-        if token is None:
-            self.session.headers.pop("Authorization", None)
-        else:
-            self.session.headers["Authorization"] = f"Bearer {token}"
+    def set_bearer_token(self, token: str, *, base_url: str) -> None:
+        """Send `Authorization: Bearer <token>` with every request to `base_url`, and only there."""
+        # A trailing slash stops a look-alike host such as "https://sport.nubapp.com.example" from matching
+        self._bearer = (base_url.rstrip("/") + "/", token)
+
+    def clear_bearer_token(self) -> None:
+        """Stop sending the bearer token."""
+        self._bearer = None
 
     def request_json(
         self, method: str, url: str, *, headers: dict[str, str] | None = None, **kwargs: Any
@@ -57,7 +61,7 @@ class ApiClient:
         Args:
             method: The HTTP method, e.g. "GET" or "POST".
             url: The endpoint URL.
-            headers: Extra headers for this request only, merged over the session headers.
+            headers: Extra headers for this request only, merged over the session headers and the bearer token.
             **kwargs: Passed on to `requests.Session.request`, e.g. `params`, `data`, `json` or `timeout`.
 
         Raises:
@@ -65,6 +69,8 @@ class ApiClient:
             requests.RequestException: If the request itself fails, e.g. on a timeout or connection error.
         """
         kwargs.setdefault("timeout", self.timeout)
+        if self._bearer is not None and url.startswith(self._bearer[0]):
+            headers = {"Authorization": f"Bearer {self._bearer[1]}", **(headers or {})}
         # Never log request bodies or headers: they contain the password and tokens
         response = self.session.request(method, url, headers=headers, **kwargs)
         logger.debug("%s %s -> HTTP %s in %.2f s", method, url, response.status_code, response.elapsed.total_seconds())

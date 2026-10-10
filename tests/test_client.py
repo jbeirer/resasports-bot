@@ -11,7 +11,8 @@ from urllib3.util.retry import Retry
 from pysportbot.client import DEFAULT_HEADERS, ApiClient
 from pysportbot.exceptions import APIError
 
-URL = "https://api.example.test/endpoint"
+BASE_URL = "https://api.example.test"
+URL = f"{BASE_URL}/endpoint"
 
 
 @pytest.fixture
@@ -89,7 +90,7 @@ def test_sends_default_headers(client, rsps):
 
 def test_request_headers_merge_with_session_headers(client, rsps):
     rsps.add(responses.GET, URL, json={})
-    client.set_bearer_token("session-token")
+    client.set_bearer_token("session-token", base_url=BASE_URL)
 
     client.get_json(URL, headers={"Authorization": "Bearer request-token", "X-Extra": "1"})
 
@@ -98,24 +99,41 @@ def test_request_headers_merge_with_session_headers(client, rsps):
     assert sent["X-Extra"] == "1"
     assert sent["User-Agent"] == DEFAULT_HEADERS["User-Agent"]
     # The per-request override does not leak into the session
-    assert client.session.headers["Authorization"] == "Bearer session-token"
+    assert "Authorization" not in client.session.headers
 
 
-def test_set_bearer_token(client, rsps):
+@pytest.mark.parametrize(
+    ("url", "sent"),
+    [
+        pytest.param(URL, True, id="same-service"),
+        pytest.param("https://other.example.test/endpoint", False, id="other-service"),
+        pytest.param("https://api.example.test.evil.test/endpoint", False, id="look-alike-host"),
+    ],
+)
+def test_bearer_token_is_scoped_to_base_url(client, rsps, url, sent):
+    rsps.add(responses.GET, url, json={})
+    client.set_bearer_token("token", base_url=BASE_URL)
+
+    client.get_json(url)
+
+    assert ("Authorization" in rsps.calls[0].request.headers) is sent
+
+
+def test_clear_bearer_token(client, rsps):
     rsps.add(responses.GET, URL, json={})
-    client.set_bearer_token("token")
-    client.set_bearer_token(None)
+    client.set_bearer_token("token", base_url=BASE_URL)
+    client.clear_bearer_token()
 
     client.get_json(URL)
 
     assert "Authorization" not in rsps.calls[0].request.headers
     # Clearing an already cleared token is fine
-    client.set_bearer_token(None)
+    client.clear_bearer_token()
 
 
 def test_logs_request_without_body_or_headers(client, rsps, pysportbot_caplog):
     rsps.add(responses.POST, URL, json={})
-    client.set_bearer_token("secret-token")
+    client.set_bearer_token("secret-token", base_url=BASE_URL)
     pysportbot_caplog.set_level(logging.DEBUG, logger="pysportbot")
 
     client.post_json(URL, json={"password": "secret-password"})

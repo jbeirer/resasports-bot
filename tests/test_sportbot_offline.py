@@ -127,7 +127,7 @@ def test_activities_failure_after_authentication_logs_out(mocked_api, centre_slu
 
     assert bot.is_logged_in() is False
     assert bot._authenticator.authenticated is False
-    assert "Authorization" not in bot._client.session.headers
+    assert bot._client._bearer is None
 
 
 def test_login_failure_resets_state(mocked_api, centre_slug):
@@ -209,7 +209,7 @@ def test_ensure_logged_in_failed_relogin_logs_out(offline_bot, mocked_api):
         offline_bot.ensure_logged_in()
 
     assert offline_bot.is_logged_in() is False
-    assert "Authorization" not in offline_bot._client.session.headers
+    assert offline_bot._client._bearer is None
     with pytest.raises(NotLoggedInError):
         offline_bot.activities()
 

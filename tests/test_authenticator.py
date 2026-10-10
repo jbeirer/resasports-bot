@@ -35,7 +35,8 @@ def test_login_success(auth, client, mocked_api, payloads):
     assert auth.authenticated is True
     assert auth.id_application == str(login_app["id_application"])
     assert auth.id_user == str(login_app["id_user"])
-    assert client.session.headers["Authorization"] == f"Bearer {payloads['sport_user_token']['jwt_token']}"
+    [user_call] = [c for c in mocked_api.calls if c.request.url == str(Endpoints.USER)]
+    assert user_call.request.headers["Authorization"] == f"Bearer {payloads['sport_user_token']['jwt_token']}"
     assert auth.user_id == str(payloads["user"]["data"]["user"]["id_user"])
 
 
@@ -183,5 +184,14 @@ def test_failed_login_clears_bearer_token(auth, client, mocked_api):
     with pytest.raises(AuthenticationError):
         auth.login("user@example.com", "wrong-password")
 
-    assert "Authorization" not in client.session.headers
+    assert client._bearer is None
     assert (auth.id_user, auth.id_application) == (None, None)
+
+
+def test_nubapp_token_is_not_sent_to_resasocial(auth, client, mocked_api):
+    auth.login("user@example.com", "password")
+
+    client.post_json(Endpoints.CENTRE, json={})
+
+    [centre_call] = [c for c in mocked_api.calls if c.request.url == str(Endpoints.CENTRE)]
+    assert "Authorization" not in centre_call.request.headers

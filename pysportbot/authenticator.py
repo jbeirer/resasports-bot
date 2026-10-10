@@ -42,7 +42,8 @@ class Authenticator:
         self.reset()
         try:
             resasocial_jwt = self._resasocial_login(email, password)
-            self._client.set_bearer_token(self._get_sport_user_token(resasocial_jwt))
+            # Scoped to Nubapp, so the token never reaches Resasocial
+            self._client.set_bearer_token(self._get_sport_user_token(resasocial_jwt), base_url=Endpoints.BASE_NUBAPP)
             self.user_id = self._fetch_user_id()
         except Exception as exc:
             self.reset()
@@ -70,7 +71,7 @@ class Authenticator:
         """Forget the login state and stop sending the Nubapp token."""
         self.authenticated = False
         self.id_user = self.id_application = self.user_id = None
-        self._client.set_bearer_token(None)
+        self._client.clear_bearer_token()
 
     def _request(self, step: str, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
         """Send a login request, turning an APIError into an AuthenticationError that names the step."""
@@ -104,7 +105,7 @@ class Authenticator:
     def _get_sport_user_token(self, resasocial_jwt: str) -> str:
         """Exchange the Resasocial JWT for a Nubapp JWT."""
         params = {"id_user": self.id_user, "id_application": self.id_application}
-        # Per-request headers merge over the session headers, so only Authorization changes here
+        # Per-request headers merge over the session headers, so only Authorization is added here
         headers = {"Authorization": f"Bearer {resasocial_jwt}"}
         data = self._request("getSportUserToken", "GET", Endpoints.SPORT_USER_TOKEN, params=params, headers=headers)
 
