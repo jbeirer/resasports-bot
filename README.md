@@ -49,7 +49,7 @@ With [uv](https://docs.astral.sh/uv/), `uvx pysportbot centres` runs the command
 
 - **Password:** there is no `--password` flag, because it would end up in your shell history and in the process list. The password comes from `SPORTBOT_PASSWORD`, or from a prompt when you run the command in a terminal.
 - **Global options:** `--log-level` [default: `WARNING`, so you only see the result; `INFO` for `run`] and `--time-zone` of the centre [default: `Europe/Madrid`] go before or after the command.
-- **Exit codes:** `0` on success, `1` if the operation fails (e.g. the slot is already booked), `2` for invalid arguments, configuration or missing credentials, and `130` if interrupted. Errors are printed without a traceback; `--log-level DEBUG` adds it. For `run`, failed bookings do not change the exit code yet: it is `0` even if no class could be booked.
+- **Exit codes:** `0` on success, `1` if the operation fails (e.g. the slot is already booked), `2` for invalid arguments, configuration or missing credentials, and `130` if interrupted. Errors are printed without a traceback; `--log-level DEBUG` adds it. For `run`, `1` means that at least one class was not booked, see [How the service books](#how-the-service-books).
 
 Run `pysportbot --help` or `pysportbot <command> --help` for all options.
 
@@ -83,6 +83,11 @@ bot.ensure_logged_in()
 # Returns the booked slot as listed before the booking, so `inscribed` does not count your booking yet
 # Raises an exception if the booking fails (e.g. not bookable yet, already booked, full)
 bot.book("Yoga", "2026-01-05 07:00")
+
+# For time-critical bookings, find the slot ahead of time and book it later with a single request
+# book_slot() leaves checking whether the slot is full to the API, because the slot's counts may be stale by then
+slot = bot.find_slot("Yoga", "2026-01-05 07:00")
+bot.book_slot(slot)
 
 # Cancel an activity slot on a specific day and time
 # Raises an exception if the cancellation fails
@@ -222,15 +227,45 @@ pysportbot run --help
 ```
 Currently supported options include:
 
-1. `--booking-delay`: sets a global delay in seconds before booking execution, must not be negative [default: 0]
-2. `--retry-attempts`: sets the number of booking attempts per class, must be at least 1 [default: 3]
-3. `--retry-delay`: sets the delay in seconds between booking retries, must not be negative [default: 5]
-4. `--time-zone`: sets the time zone for the service [default: Europe/Madrid]
-5. `--log-level`: sets the log-level of the service [default: INFO]
-6. `--max-threads`: caps the number of classes booked in parallel, must be a positive integer [default: no cap]
-7. `--dry-run`: does everything, including logging in, waiting until the execution time and checking that the slots exist and are neither full nor cancelled, but sends no booking requests. The real booking can still fail, e.g. if a slot fills up in the meantime. With `"booking_execution": "now"` it runs immediately, as a quick check of your configuration.
+1. `--booking-delay`: sets a global delay in seconds after the execution time before booking, must not be negative [default: 0]
+2. `--poll-interval`: sets the delay in seconds between attempts while a slot is not bookable yet or not found, must be positive [default: 0.5]
+3. `--poll-window`: sets how long to keep polling, in seconds after the execution time, must not be negative [default: 60]
+4. `--retry-attempts`: sets the maximum number of attempts per class that fail with an error that may be temporary, such as a network error, must be at least 1 [default: 3]
+5. `--retry-delay`: sets the delay in seconds after such an error, must not be negative [default: 5]
+6. `--time-zone`: sets the time zone for the service [default: Europe/Madrid]
+7. `--log-level`: sets the log-level of the service [default: INFO]
+8. `--max-threads`: caps the number of classes booked in parallel, must be a positive integer [default: no cap]
+9. `--dry-run`: does everything, including logging in, waiting until the execution time and checking that the slots exist and are neither full nor cancelled, but sends no booking requests. The real booking can still fail, e.g. if a slot fills up in the meantime. With `"booking_execution": "now"` it runs immediately, as a quick check of your configuration.
+
+All delays accept fractions of a second, e.g. `--retry-delay 0.5`.
 
 If the configuration or an option is invalid, the service prints the problems without a traceback and exits with code 2.
+
+### How the service books
+
+Popular classes fill up within seconds of the booking window opening, so the service prepares ahead and keeps trying fast at the opening moment:
+
+```text
+T-60 s     log in again if the session expired, and look up the slots
+T          book: one request per class, all classes at once
+T…T+60 s   try again every 0.5 s while a slot is "not bookable yet"
+```
+
+Here `T` is the `booking_execution` time, plus `--booking-delay` for the booking itself, and the polling stops after `--poll-window` seconds.
+If a slot cannot be found at `T-60 s`, e.g. because the calendar is not published yet, it is looked up again when booking.
+With `"booking_execution": "now"` the service books at once.
+
+What the service does after a failed attempt depends on the error:
+
+| Error | What happens | Result |
+|-------|--------------|--------|
+| Not bookable yet, not available, or slot not found | Try again every `--poll-interval` seconds until `--poll-window` seconds after the execution time. Polls do not count as retry attempts | `failed` or `not found` once the window ends |
+| Network error, unexpected API response or unknown error code | Try again after `--retry-delay` seconds, up to `--retry-attempts` attempts | `failed` after the last attempt |
+| Already booked | Stop. This includes a booking that timed out but went through: the next attempt finds it already booked | `already booked` |
+| Full | Stop | `full` |
+
+At the end, the service logs a summary with the status and the number of attempts of each class.
+It exits with code `0` if every class is `booked` or `already booked` (or would be booked in a `--dry-run`), and with code `1` otherwise, so that a failed booking is easy to spot, e.g. in a scheduled GitHub Actions run.
 
 ## Automating Weekly Bookings with GitHub Actions
 
@@ -271,9 +306,11 @@ jobs:
           # GitHub Actions renders colored logs, but its output is not a terminal
           FORCE_COLOR: "1"
         run: |
-          uvx pysportbot run --config config.json --booking-delay 1 --retry-attempts 3 --retry-delay 5
+          uvx pysportbot run --config config.json --booking-delay 1 --poll-interval 0.5 --poll-window 60
 ```
-**Note:** Make sure the workflow starts early enough — before your booking execution time (e.g., 07:30 Madrid time) — to allow for potential delays in job startup or execution.
+**Notes:**
+1. Start the workflow at least 10 minutes before your booking execution time (e.g., 07:30 Madrid time). Scheduled GitHub Actions runs often start several minutes late, and the service waits until the execution time anyway.
+2. If a class could not be booked, `pysportbot run` exits with code 1 and GitHub marks the run as failed. GitHub can notify you of failed runs, e.g. by email, depending on your notification settings, so you know to book the class yourself.
 
 
 ## LICENSE
