@@ -1,6 +1,9 @@
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import pytest
 import responses
@@ -18,6 +21,20 @@ DEFAULT_RESPONSES = [
     (responses.POST, Endpoints.USER, "user.json"),
     (responses.POST, Endpoints.SLOTS, "activities_calendar.json"),
 ]
+
+
+# A Friday one week before the fixture's slots on Friday 2030-01-04
+FROZEN_NOW = datetime(2029, 12, 28, 7, 30, tzinfo=ZoneInfo("Europe/Madrid"))
+CREDENTIALS_ENV = {
+    "SPORTBOT_EMAIL": "user@example.com",
+    "SPORTBOT_PASSWORD": "password",
+    "SPORTBOT_CENTRE": "test-centre",
+}
+# Books the fixture's open Gimnasio slot on Friday 2030-01-04 when run at FROZEN_NOW
+CONFIG_WITHOUT_CREDENTIALS = {
+    "booking_execution": "now",
+    "classes": [{"activity": "Gimnasio", "class_day": "Friday", "class_time": "12:00"}],
+}
 
 
 def load_fixture(name: str) -> dict:
@@ -74,3 +91,34 @@ def offline_bot(mocked_api, centre_slug) -> SportBot:
     bot = SportBot(log_level="DEBUG")
     bot.login("user@example.com", "password", centre_slug)
     return bot
+
+
+@pytest.fixture
+def frozen_now():
+    """Freeze the service's clock at FROZEN_NOW."""
+    with patch("pysportbot.service.booking.datetime", wraps=datetime) as mock_datetime:
+        mock_datetime.now.return_value = FROZEN_NOW
+        yield
+
+
+@pytest.fixture
+def mock_time():
+    """Make the service's sleeps return immediately."""
+    with patch("pysportbot.service.booking.time") as mock:
+        yield mock
+
+
+@pytest.fixture
+def config_path(tmp_path):
+    """A service config file without credentials."""
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(CONFIG_WITHOUT_CREDENTIALS))
+    return path
+
+
+@pytest.fixture
+def credentials_env(monkeypatch) -> dict[str, str]:
+    """Set the SPORTBOT_* credential env vars to the test account."""
+    for name, value in CREDENTIALS_ENV.items():
+        monkeypatch.setenv(name, value)
+    return CREDENTIALS_ENV

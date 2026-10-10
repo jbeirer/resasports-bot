@@ -2,6 +2,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from functools import partial
 from zoneinfo import ZoneInfo
 
 import requests
@@ -21,6 +22,8 @@ def attempt_booking(
     start: datetime,
     retry_attempts: int = 1,
     retry_delay: int = 0,
+    *,
+    dry_run: bool = False,
 ) -> None:
     """
     Attempt to book a slot for the given class.
@@ -31,10 +34,14 @@ def attempt_booking(
         start (datetime): Timezone-aware start time of the class.
         retry_attempts (int): Number of retry attempts.
         retry_delay (int): Delay between retries.
+        dry_run (bool): Find the slot and check that it is open, but send no booking request.
     """
     for attempt_num in range(1, retry_attempts + 1):
         try:
-            bot.book(activity=activity, start=start)
+            if dry_run:
+                _dry_run_booking(bot, activity, start)
+            else:
+                bot.book(activity=activity, start=start)
 
         except (SlotAlreadyBookedError, SlotFullError) as e:
             # Retrying cannot succeed
@@ -56,6 +63,26 @@ def attempt_booking(
     logger.error(f"Failed to book {_describe(activity, start)} after {retry_attempts} attempts.")
 
 
+def _dry_run_booking(bot: SportBot, activity: str, start: datetime) -> None:
+    """
+    Check that the slot exists and is open, and log what booking would do, without sending a booking request.
+
+    Raises:
+        SlotFullError: If the slot has no places left, as `SportBot.book()` would.
+        SportBotError: If the slot cannot be found, see `SportBot.find_slot()`.
+    """
+    slot = bot.find_slot(activity=activity, start=start)
+    if slot.cancelled:
+        logger.warning(f"DRY RUN: {_describe(activity, start)} is cancelled, so booking it would fail.")
+    elif slot.is_full:
+        raise SlotFullError(str(slot.id))
+    else:
+        logger.info(
+            f"DRY RUN: would book {_describe(activity, start)} "
+            f"(slot {slot.id}, {slot.inscribed}/{slot.capacity} places taken)."
+        )
+
+
 def _describe(activity: str, start: datetime) -> str:
     """Describe a class as e.g. "'Yoga' on Monday 2026-01-12 at 18:00"."""
     time_format = "%H:%M:%S" if start.second else "%H:%M"
@@ -70,6 +97,8 @@ def schedule_bookings(
     retry_delay: int,
     time_zone: str,
     max_threads: int,
+    *,
+    dry_run: bool = False,
 ) -> None:
     """
     Execute bookings in parallel with a limit on the number of threads.
@@ -82,6 +111,7 @@ def schedule_bookings(
         retry_delay (int): Delay between retries.
         time_zone (str): Timezone for booking.
         max_threads (int): Maximum number of threads to use.
+        dry_run (bool): Find the slots, but send no booking requests.
     """
     tz = ZoneInfo(time_zone)
     now = datetime.now(tz)
@@ -134,10 +164,10 @@ def schedule_bookings(
         time.sleep(booking_delay)
 
     # Submit bookings in parallel
+    book = partial(attempt_booking, bot, retry_attempts=retry_attempts, retry_delay=retry_delay, dry_run=dry_run)
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
         future_to_booking = {
-            executor.submit(attempt_booking, bot, activity, start, retry_attempts, retry_delay): (activity, start)
-            for activity, start in bookings
+            executor.submit(book, activity=activity, start=start): (activity, start) for activity, start in bookings
         }
 
         for future in as_completed(future_to_booking):

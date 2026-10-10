@@ -16,6 +16,7 @@ def run_service(
     time_zone: str = "Europe/Madrid",
     log_level: str = "INFO",
     max_threads: int | None = None,
+    dry_run: bool = False,
 ) -> None:
     """
     Run the booking service with the given configuration.
@@ -28,6 +29,7 @@ def run_service(
         time_zone (str): Time zone for the booking.
         log_level (str): Logging level for the service.
         max_threads (int | None): Maximum number of classes booked in parallel. None books all classes in parallel.
+        dry_run (bool): Do everything, including waiting and finding the slots, but send no booking requests.
 
     Raises:
         ValueError: If retry_attempts < 1, retry_delay < 0, booking_delay < 0 or max_threads < 1.
@@ -48,6 +50,8 @@ def run_service(
     # to ensure the session is still valid
     bot = SportBot(log_level=log_level, time_zone=time_zone)
     logger.info(f"Booking execution: {config.execution or 'now'}")
+    if dry_run:
+        logger.info("DRY RUN: no booking requests will be sent.")
     bot.login(config.email, config.password, config.centre)
 
     # Validate activities in the configuration
@@ -66,6 +70,7 @@ def run_service(
         retry_delay,
         time_zone,
         n_threads,
+        dry_run=dry_run,
     )
 
-    logger.info("All bookings completed.")
+    logger.info("Dry run completed." if dry_run else "All bookings completed.")

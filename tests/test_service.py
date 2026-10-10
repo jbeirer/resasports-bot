@@ -339,7 +339,9 @@ class TestServiceRun(unittest.TestCase):
         bot_instance.login.assert_called_once_with("test@example.com", "pass", "my-gim")
         mock_validate_activities.assert_called_once_with(bot_instance, config)
         # One thread per class when uncapped
-        mock_schedule_bookings.assert_called_once_with(bot_instance, config, 10, 2, 1, "Europe/Madrid", 1)
+        mock_schedule_bookings.assert_called_once_with(
+            bot_instance, config, 10, 2, 1, "Europe/Madrid", 1, dry_run=False
+        )
 
     @patch("pysportbot.service.service.validate_activities")
     @patch("pysportbot.service.service.schedule_bookings")
