@@ -2,6 +2,7 @@ import json
 from datetime import datetime, timedelta
 
 import pandas as pd
+import pytz
 from pandas import DataFrame
 
 from .authenticator import Authenticator
@@ -12,11 +13,14 @@ from .utils.time import get_day_bounds
 
 logger = get_logger(__name__)
 
+# The SLOTS endpoint is slow: a multi-day calendar regularly takes over 10 s and occasionally much longer
+SLOTS_READ_TIMEOUT = 120
+
 
 class Activities:
     """Handles activity fetching and slot management."""
 
-    def __init__(self, authenticator: Authenticator) -> None:
+    def __init__(self, authenticator: Authenticator, *, time_zone: str = "Europe/Madrid") -> None:
         """Initialize the Activities class."""
         # Session
         self.session = authenticator.session
@@ -24,6 +28,11 @@ class Activities:
         self.creds = authenticator.creds
         # Headers for requests
         self.headers = authenticator.headers
+        # (connect, read) timeout for requests, with a longer read timeout for the slow SLOTS endpoint
+        connect_timeout, _ = authenticator.timeout
+        self.timeout = (connect_timeout, SLOTS_READ_TIMEOUT)
+        # Time zone used to determine "today"
+        self.time_zone = time_zone
 
     def fetch(self, days_ahead: int = 7) -> DataFrame:
         """
@@ -41,9 +50,10 @@ class Activities:
         """
         logger.info(f"Fetching activities for the next {days_ahead} days. This might take a while...")
 
-        # Calculate date range
-        start_date = datetime.now().strftime("%Y-%m-%d")
-        end_date = (datetime.now() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+        # Calculate date range in the configured time zone
+        now = datetime.now(pytz.timezone(self.time_zone))
+        start_date = now.strftime("%Y-%m-%d")
+        end_date = (now + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
 
         # Get day bounds for the date range
         start_timestamp = get_day_bounds(start_date)[0]
@@ -57,7 +67,7 @@ class Activities:
             "end_timestamp": end_timestamp,
         }
         # Make request to SLOTS endpoint
-        response = self.session.post(Endpoints.SLOTS, headers=self.headers, data=payload)
+        response = self.session.post(Endpoints.SLOTS, headers=self.headers, data=payload, timeout=self.timeout)
 
         if response.status_code != 200:
             error_msg = ErrorMessages.failed_fetch("activities from slots")
@@ -143,7 +153,7 @@ class Activities:
             "end_timestamp": day_bounds[1],
             "id_category_activity": id_category_activity,
         }
-        response = self.session.post(Endpoints.SLOTS, headers=self.headers, data=payload)
+        response = self.session.post(Endpoints.SLOTS, headers=self.headers, data=payload, timeout=self.timeout)
 
         if response.status_code != 200:
             error_msg = ErrorMessages.failed_fetch("slots")

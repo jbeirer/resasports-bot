@@ -22,6 +22,7 @@ class SportBot:
         self._logger.info("Initializing SportBot...")
         self._logger.info(f"Log level: {log_level}")
         self._logger.info(f"Time zone: {time_zone}")
+        self._time_zone = time_zone
         self._centres = Centres(print_centres)
         self._session: Session = Session()
         self._auth: Authenticator | None = None
@@ -38,7 +39,7 @@ class SportBot:
 
         # Lazy initialization - create only when first needed
         if self._activities is None:
-            self._activities = Activities(self._auth)
+            self._activities = Activities(self._auth, time_zone=self._time_zone)
         return self._activities
 
     @property
@@ -140,6 +141,7 @@ class SportBot:
             self._logger.info(f"Successfully booked class '{activity}' on {start_time}")
         except ValueError:
             self._logger.error(f"Failed to book class '{activity}' on {start_time}")
+            raise
 
     def cancel(self, activity: str, start_time: str) -> None:
         self._logger.debug(f"Attempting to cancel class '{activity}' on {start_time}")
@@ -160,3 +162,4 @@ class SportBot:
             self._logger.info(f"Successfully cancelled class '{activity}' on {start_time}")
         except ValueError:
             self._logger.error(f"Failed to cancel class '{activity}' on {start_time}")
+            raise

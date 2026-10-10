@@ -6,9 +6,11 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
+import responses
 
 from pysportbot import SportBot
 from pysportbot.centres import Centres
+from pysportbot.endpoints import Endpoints
 from pysportbot.utils.errors import ErrorMessages
 
 
@@ -133,3 +135,20 @@ def test_check_centre_valid_slug_passes(mocked_api, centre_slug):
     centres = Centres()
 
     centres.check_centre(centre_slug)
+
+
+@pytest.mark.parametrize(
+    "response_kwargs",
+    [
+        pytest.param({"status": 500}, id="non-200"),
+        pytest.param({"body": "not json"}, id="invalid-json"),
+        pytest.param({"json": {}}, id="missing-applications"),
+        pytest.param({"json": {"applications": []}}, id="empty"),
+    ],
+)
+def test_fetch_centres_failure_raises_runtime_error(mocked_api, response_kwargs):
+    """A failed centre fetch raises a clear RuntimeError instead of `KeyError: 'slug'`."""
+    mocked_api.replace(responses.POST, str(Endpoints.CENTRE), **response_kwargs)
+
+    with pytest.raises(RuntimeError, match=re.escape(ErrorMessages.failed_fetch("centres"))):
+        SportBot()

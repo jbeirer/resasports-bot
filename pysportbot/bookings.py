@@ -1,4 +1,6 @@
-import json
+from typing import Any
+
+from requests import Response
 
 from .authenticator import Authenticator
 from .endpoints import Endpoints
@@ -19,6 +21,43 @@ class Bookings:
         self.creds = authenticator.creds
         # Headers for requests
         self.headers = authenticator.headers
+        # (connect, read) timeout for requests
+        self.timeout = authenticator.timeout
+
+    @staticmethod
+    def _parse_response(response: Response, action: str) -> dict[str, Any]:
+        """
+        Validate the HTTP status and body of a booking/cancellation response.
+
+        Args:
+            response (Response): The HTTP response.
+            action (str): The action name used in error messages ("booking" or "cancellation").
+
+        Returns:
+            dict: The parsed JSON body, guaranteed to contain a "success" key.
+
+        Raises:
+            RuntimeError: If the status is not 200 or the body is not a JSON object with a boolean "success".
+        """
+        if response.status_code != 200:
+            logger.error(
+                f"{action.capitalize()} request failed with status {response.status_code}: {response.text[:200]}"
+            )
+            raise RuntimeError(ErrorMessages.unknown_error(action))
+
+        try:
+            response_json: dict[str, Any] = response.json()
+        except ValueError as err:
+            logger.error(f"Invalid JSON in {action} response: {response.text[:200]}")
+            raise RuntimeError(ErrorMessages.unknown_error(action)) from err
+
+        success = response_json.get("success") if isinstance(response_json, dict) else None
+        # Require a real boolean: a string like "false" would otherwise be truthy
+        if success is not True and success is not False:
+            logger.error(f"Unexpected {action} response: {response.text[:200]}")
+            raise RuntimeError(ErrorMessages.unknown_error(action))
+
+        return response_json
 
     def book(self, slot_id: str) -> None:
         """
@@ -37,14 +76,14 @@ class Bookings:
         payload = {"id_user": self.creds["id_user"], "id_activity_calendar": slot_id}
 
         # Send booking request
-        response = self.session.post(Endpoints.BOOKING, data=payload, headers=self.headers)
-        response_json = json.loads(response.content.decode("utf-8"))
+        response = self.session.post(Endpoints.BOOKING, data=payload, headers=self.headers, timeout=self.timeout)
+        response_json = self._parse_response(response, "booking")
         # Check success directly
         if response_json["success"]:
             logger.debug(f"Successfully booked slot {slot_id}.")
         else:
             # Handle error cases
-            error_code = response_json["error"]  # Now we know it exists when success=False
+            error_code = response_json.get("error")
 
             if error_code == 5:
                 logger.warning(f"Slot {slot_id} is already booked.")
@@ -56,7 +95,7 @@ class Bookings:
                 logger.warning(f"Slot {slot_id} is not bookable yet.")
                 raise ValueError(ErrorMessages.slot_not_bookable_yet())
             else:
-                logger.error(f"Booking failed with error code: {error_code}")
+                logger.error(f"Booking failed with error code: {error_code}. Response: {response.text[:200]}")
                 raise RuntimeError(ErrorMessages.unknown_error("booking"))
 
     def cancel(self, slot_id: str) -> None:
@@ -68,6 +107,7 @@ class Bookings:
 
         Raises:
             ValueError: If the cancellation fails.
+            RuntimeError: If the response is not a valid cancellation response.
         """
         logger.debug(f"Attempting to cancel slot {slot_id}...")
 
@@ -75,8 +115,8 @@ class Bookings:
         payload = {"id_user": self.creds["id_user"], "id_activity_calendar": slot_id}
 
         # Send cancellation request
-        response = self.session.post(Endpoints.CANCELLATION, data=payload, headers=self.headers)
-        response_json = json.loads(response.content.decode("utf-8"))
+        response = self.session.post(Endpoints.CANCELLATION, data=payload, headers=self.headers, timeout=self.timeout)
+        response_json = self._parse_response(response, "cancellation")
 
         # Handle response
         if response_json["success"]:

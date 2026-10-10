@@ -36,9 +36,11 @@ bot.activities(limit=10)
 bot.daily_slots(activity="YourFavouriteGymClass", day="2025-01-03", limit=10)
 
 # Book an activity slot on a specific day and time
+# Raises an exception if the booking fails (e.g. not bookable yet, already booked, full)
 bot.book(activity="YourFavouriteGymClass", start_time="2024-12-30 07:00:00")
 
 # Cancel an activity slot on a specific day and time
+# Raises an exception if the cancellation fails
 bot.cancel(activity="YourFavouriteGymClass", start_time="2024-12-30 07:00:00")
 ```
 
@@ -58,14 +60,14 @@ Let's say you would like to book Yoga next Monday at 18:00:00, then your `config
 {
     "email": "your-email",
     "password": "your-password",
-    "center": "your-gym-name",
+    "centre": "your-gym-name",
     "booking_execution": "now",
 
     "classes": [
         {
             "activity": "Yoga",
             "class_day": "Monday",
-            "class_time": "18:00:00",
+            "class_time": "18:00:00"
         }
     ]
 }
@@ -78,14 +80,14 @@ Let's say you would like to book Yoga next Monday at 18:00:00, but the execution
 {
     "email": "your-email",
     "password": "your-password",
-    "center": "your-gym-name",
+    "centre": "your-gym-name",
     "booking_execution": "Friday 07:30:00",
 
     "classes": [
         {
             "activity": "Yoga",
             "class_day": "Monday",
-            "class_time": "18:00:00",
+            "class_time": "18:00:00"
         }
     ]
 }
@@ -104,9 +106,9 @@ python -m pysportbot.service --help
 ```
 Currently supported options include:
 
-1. `--booking-delay`: sets a global delay in seconds before booking execution [default: 0]
-2. `--retry-attempts`: sets the number of retries attempted in case a booking attempt fails [default: 3]
-3. `--retry-delay`: sets the delay in seconds between booking retries [default: 5]
+1. `--booking-delay`: sets a global delay in seconds before booking execution, must not be negative [default: 0]
+2. `--retry-attempts`: sets the number of booking attempts per class, must be at least 1 [default: 3]
+3. `--retry-delay`: sets the delay in seconds between booking retries, must not be negative [default: 5]
 4. `--time-zone`: sets the time zone for the service [default: Europe/Madrid]
 5. `--log-level`: sets the log-level of the service [default: INFO]
 6. `--max-threads`: limits the number of used threads for parallel bookings [default: -1]
