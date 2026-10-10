@@ -1,11 +1,11 @@
+import logging
 from datetime import datetime
 from typing import Any
 
 from pysportbot import SportBot
 from pysportbot.exceptions import ConfigError
-from pysportbot.utils.logger import get_logger
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 DAY_MAP = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
 VALID_DAYS = "Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday"

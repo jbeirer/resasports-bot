@@ -1,11 +1,11 @@
 import json
+import logging
 
 from .endpoints import Endpoints
 from .exceptions import AuthenticationError
 from .session import Session
-from .utils.logger import get_logger
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class Authenticator:

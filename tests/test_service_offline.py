@@ -1,19 +1,20 @@
-from datetime import datetime
-from unittest.mock import patch
+from datetime import datetime, timedelta
+from unittest.mock import MagicMock, call, patch
+from zoneinfo import ZoneInfo
 
 import pytest
-import pytz
 import requests
 import responses
 
 from pysportbot.endpoints import Endpoints
 from pysportbot.exceptions import ConfigError
-from pysportbot.service.booking import attempt_booking
+from pysportbot.service.booking import attempt_booking, schedule_bookings
 from pysportbot.service.config_validator import validate_config
+from pysportbot.service.scheduling import calculate_next_execution
 from pysportbot.service.service import run_service
 
 # A Friday one week before the fixture's slots on Friday 2030-01-04
-FROZEN_NOW = pytz.timezone("Europe/Madrid").localize(datetime(2029, 12, 28, 7, 30))
+FROZEN_NOW = datetime(2029, 12, 28, 7, 30, tzinfo=ZoneInfo("Europe/Madrid"))
 OPEN_SLOT_TIME = "12:00:00"  # Gimnasio, places left
 FULL_SLOT_TIME = "10:00:00"  # Gimnasio, n_inscribed == n_capacity
 
@@ -150,6 +151,56 @@ def test_run_service_rejects_invalid_arguments(mocked_api, overrides):
         run_service(config, **kwargs)
 
     assert len(mocked_api.calls) == 0
+
+
+@pytest.mark.parametrize(
+    ("now", "expected", "utc_offset"),
+    [
+        # Clocks go forward on Sunday 2026-03-29 at 02:00: CET (+01:00) -> CEST (+02:00)
+        pytest.param(
+            datetime(2026, 3, 27, 12, 0), datetime(2026, 3, 29, 7, 30), timedelta(hours=2), id="spring-forward"
+        ),
+        # Clocks go back on Sunday 2026-10-25 at 03:00: CEST (+02:00) -> CET (+01:00)
+        pytest.param(datetime(2026, 10, 23, 12, 0), datetime(2026, 10, 25, 7, 30), timedelta(hours=1), id="fall-back"),
+    ],
+)
+def test_calculate_next_execution_across_dst_change(now, expected, utc_offset):
+    madrid = ZoneInfo("Europe/Madrid")
+    with patch("pysportbot.service.scheduling.datetime", wraps=datetime) as mock_datetime:
+        mock_datetime.now.return_value = now.replace(tzinfo=madrid)
+        result = calculate_next_execution("Sunday 07:30:00", time_zone="Europe/Madrid")
+
+    assert result.replace(tzinfo=None) == expected
+    assert result.utcoffset() == utc_offset
+    assert result == (expected - utc_offset).replace(tzinfo=ZoneInfo("UTC"))
+
+
+@pytest.mark.parametrize(
+    ("now", "hours_until_execution"),
+    [
+        # Saturday 07:30 -> Sunday 07:30 is 23 real hours when clocks go forward, and 25 when they go back
+        pytest.param(datetime(2026, 3, 28, 7, 30), 23, id="spring-forward"),
+        pytest.param(datetime(2026, 10, 24, 7, 30), 25, id="fall-back"),
+    ],
+)
+def test_schedule_bookings_waits_real_time_across_dst_change(mock_time, now, hours_until_execution):
+    madrid = ZoneInfo("Europe/Madrid")
+    start = now.replace(tzinfo=madrid)
+    seconds_until_execution = hours_until_execution * 3600
+    # The clock when the service wakes up to re-authenticate, 60 s before execution
+    reauth_now = datetime.fromtimestamp(start.timestamp() + seconds_until_execution - 60, madrid)
+    config = {**VALID_CONFIG, "booking_execution": "Sunday 07:30:00"}
+
+    with (
+        patch("pysportbot.service.scheduling.datetime", wraps=datetime) as scheduling_datetime,
+        patch("pysportbot.service.booking.datetime", wraps=datetime) as booking_datetime,
+        patch("pysportbot.service.booking.attempt_booking"),
+    ):
+        scheduling_datetime.now.return_value = start
+        booking_datetime.now.side_effect = [start, reauth_now]
+        schedule_bookings(MagicMock(), config, 0, 1, 0, "Europe/Madrid", 1)
+
+    assert mock_time.sleep.call_args_list == [call(seconds_until_execution - 60), call(60)]
 
 
 def test_validate_config_accepts_valid_config():

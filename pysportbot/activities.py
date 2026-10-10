@@ -1,17 +1,16 @@
 import json
-from datetime import datetime, timedelta
+import logging
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pandas as pd
-import pytz
 from pandas import DataFrame
 
 from .authenticator import Authenticator
 from .endpoints import Endpoints
 from .exceptions import ActivityNotFoundError, APIError
-from .utils.logger import get_logger
-from .utils.time import get_day_bounds
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 # The SLOTS endpoint is slow: a multi-day calendar regularly takes over 10 s and occasionally much longer
 SLOTS_READ_TIMEOUT = 120
@@ -50,21 +49,15 @@ class Activities:
         """
         logger.info(f"Fetching activities for the next {days_ahead} days. This might take a while...")
 
-        # Calculate date range in the configured time zone
-        now = datetime.now(pytz.timezone(self.time_zone))
-        start_date = now.strftime("%Y-%m-%d")
-        end_date = (now + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
-
-        # Get day bounds for the date range
-        start_timestamp = get_day_bounds(start_date)[0]
-        end_timestamp = get_day_bounds(end_date)[1]
+        # Date range in the configured time zone; the API expects plain 'YYYY-MM-DD' dates
+        today = datetime.now(ZoneInfo(self.time_zone)).date()
 
         # Prepare payload for SLOTS endpoint
         payload = {
             "id_application": self.creds.get("id_application"),
             "id_user": self.creds.get("id_user"),
-            "start_timestamp": start_timestamp,
-            "end_timestamp": end_timestamp,
+            "start_timestamp": today.isoformat(),
+            "end_timestamp": (today + timedelta(days=days_ahead)).isoformat(),
         }
         # Make request to SLOTS endpoint
         response = self.session.post(Endpoints.SLOTS, headers=self.headers, data=payload, timeout=self.timeout)
@@ -140,9 +133,16 @@ class Activities:
             DataFrame: A DataFrame containing available slots.
 
         Raises:
+            ValueError: If `day` is not a valid 'YYYY-MM-DD' date.
             ActivityNotFoundError: If the specified activity is not found.
             APIError: If slots cannot be fetched.
         """
+        # Fail fast on a bad date, and send it to the API in canonical 'YYYY-MM-DD' form
+        try:
+            day = date.fromisoformat(day).isoformat()
+        except ValueError as err:
+            raise ValueError(f"Invalid day '{day}'. Use the format 'YYYY-MM-DD', e.g. '2025-01-03'.") from err
+
         logger.info(f"Fetching available slots for '{activity_name}' on {day}...")
 
         # Check if the activity exists
@@ -156,15 +156,12 @@ class Activities:
         id_activity = activity["id_activity"]
         id_category_activity = activity["id_category_activity"]
 
-        # Get Unix timestamp bounds for the day
-        day_bounds = get_day_bounds(day)
-
-        # Fetch slots
+        # Fetch slots; the API takes the same 'YYYY-MM-DD' day as start and end
         payload = {
             "id_application": self.creds["id_application"],
             "id_user": self.creds["id_user"],
-            "start_timestamp": day_bounds[0],
-            "end_timestamp": day_bounds[1],
+            "start_timestamp": day,
+            "end_timestamp": day,
             "id_category_activity": id_category_activity,
         }
         response = self.session.post(Endpoints.SLOTS, headers=self.headers, data=payload, timeout=self.timeout)

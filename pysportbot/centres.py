@@ -1,15 +1,15 @@
 # centres.py
 
+import logging
+
 import pandas as pd
 import requests
 from pandas import DataFrame
 
-from pysportbot.utils.logger import get_logger
-
 from .endpoints import Endpoints
 from .exceptions import APIError, CentreNotFoundError
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class Centres:

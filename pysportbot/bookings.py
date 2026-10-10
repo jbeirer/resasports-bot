@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from requests import Response
@@ -12,9 +13,8 @@ from .exceptions import (
     SlotNotBookableYetError,
     SlotUnavailableError,
 )
-from .utils.logger import get_logger
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 # Booking API error codes with a dedicated exception; any other code raises a plain BookingError
 _ERROR_CODES: dict[int, type[BookingError]] = {

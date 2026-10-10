@@ -1,8 +1,7 @@
+import logging
 import os
 
-from pysportbot.utils.logger import get_logger
-
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def get_n_threads(max_user_threads: int, requested_bookings: int) -> int:

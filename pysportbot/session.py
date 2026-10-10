@@ -1,8 +1,8 @@
+import logging
+
 from requests import Session as RequestsSession
 
-from .utils.logger import get_logger
-
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class Session:

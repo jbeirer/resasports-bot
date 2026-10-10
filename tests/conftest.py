@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,22 @@ def load_fixture(name: str) -> dict:
 def payloads() -> dict[str, dict]:
     """Fresh copies of all fixture payloads, keyed by file stem (e.g. payloads["user_login"])."""
     return {path.stem: load_fixture(path.name) for path in FIXTURES_DIR.glob("*.json")}
+
+
+@pytest.fixture
+def pysportbot_caplog(caplog, monkeypatch):
+    """
+    `caplog` that also captures pysportbot's own logs.
+
+    `caplog` listens on the root logger, but `configure_logging()` (called by `SportBot()`) stops the "pysportbot"
+    logger from propagating there. Setting `propagate = True` up front would be undone by the next `SportBot()`, so
+    attach caplog's handler to the "pysportbot" logger directly, with propagation off so records are captured once.
+    """
+    logger = logging.getLogger("pysportbot")
+    monkeypatch.setattr(logger, "propagate", False)
+    logger.addHandler(caplog.handler)
+    yield caplog
+    logger.removeHandler(caplog.handler)
 
 
 @pytest.fixture

@@ -20,7 +20,7 @@ from pysportbot.exceptions import APIError, CentreNotFoundError
         (False, []),
     ],
 )
-def test_print_centres_behavior(print_centres, expected_contains, caplog):
+def test_print_centres_behavior(print_centres, expected_contains, pysportbot_caplog):
     """
     Parametrized test to verify the behavior of the `print_centres` parameter.
 
@@ -41,13 +41,13 @@ def test_print_centres_behavior(print_centres, expected_contains, caplog):
     # Patch the `fetch_centres` method to return the mock DataFrame
     with patch("pysportbot.centres.Centres.fetch_centres", return_value=mock_df):
         # Set the log level to INFO to capture info logs
-        caplog.set_level(logging.INFO)
+        pysportbot_caplog.set_level(logging.INFO)
 
         # Initialize SportBot with the specified `print_centres` parameter
         SportBot(print_centres=print_centres)
 
     # Access the captured logs
-    logs = caplog.text.lower()
+    logs = pysportbot_caplog.text.lower()
 
     if print_centres:
         # Assert that each expected centre slug is present in the logs
@@ -59,7 +59,7 @@ def test_print_centres_behavior(print_centres, expected_contains, caplog):
             assert centre_slug not in logs, f"Did not expect '{centre_slug}' to be logged, but it was."
 
 
-def test_print_centres_outputs_non_empty_list(caplog):
+def test_print_centres_outputs_non_empty_list(pysportbot_caplog):
     """
     Test that initializing SportBot with `print_centres=True` logs a non-empty list of centres.
     """
@@ -77,20 +77,20 @@ def test_print_centres_outputs_non_empty_list(caplog):
     # Patch the `fetch_centres` method to return the mock DataFrame
     with patch("pysportbot.centres.Centres.fetch_centres", return_value=mock_df):
         # Set the log level to INFO to capture info logs
-        caplog.set_level(logging.INFO)
+        pysportbot_caplog.set_level(logging.INFO)
 
         # Initialize SportBot with print_centres=True
         SportBot(print_centres=True)
 
     # Access the captured logs
-    logs = caplog.text.lower()
+    logs = pysportbot_caplog.text.lower()
 
     # Verify that each centre slug is present in the logs
     assert "centre1" in logs, "Expected 'centre1' to be logged, but it wasn't."
     assert "centre2" in logs, "Expected 'centre2' to be logged, but it wasn't."
 
 
-def test_print_centres_does_not_output_when_disabled(caplog):
+def test_print_centres_does_not_output_when_disabled(pysportbot_caplog):
     """
     Test that initializing SportBot with `print_centres=False` does not log the list of centres.
     """
@@ -108,13 +108,13 @@ def test_print_centres_does_not_output_when_disabled(caplog):
     # Patch the `fetch_centres` method to return the mock DataFrame
     with patch("pysportbot.centres.Centres.fetch_centres", return_value=mock_df):
         # Set the log level to INFO to capture info logs
-        caplog.set_level(logging.INFO)
+        pysportbot_caplog.set_level(logging.INFO)
 
         # Initialize SportBot with print_centres=False
         SportBot(print_centres=False)
 
     # Access the captured logs
-    logs = caplog.text.lower()
+    logs = pysportbot_caplog.text.lower()
 
     # Verify that centre slugs are not present in the logs
     assert "centre1" not in logs, "Did not expect 'centre1' to be logged, but it was."
