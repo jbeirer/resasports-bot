@@ -254,17 +254,45 @@ class SportBot:
             f"Attempting to book class '{activity}' on {when} with ID {slot.id} (Slot capacity: {slot.inscribed}/{slot.capacity})"
         )
 
-        # Check if the slot is already booked out
+        # The slot was just fetched, so its counts are fresh enough to skip a booking request that cannot succeed
         if slot.is_full:
             logger.error(f"Activity '{activity}' on {when} with ID {slot.id} is booked out...")
             raise SlotFullError(str(slot.id))
 
+        return self.book_slot(slot)
+
+    def book_slot(self, slot: Slot) -> Slot:
+        """
+        Book a slot found earlier, e.g. by `find_slot()` or `daily_slots()`, with a single request.
+
+        Unlike `book()`, this does not look the slot up again, so it suits time-critical bookings where the slot is
+        found ahead of time. It does not check whether the slot is full either, because its counts may be stale by
+        now: the API decides.
+
+        Args:
+            slot: The slot to book.
+
+        Returns:
+            The given slot.
+
+        Raises:
+            NotLoggedInError: If not logged in.
+            SlotAlreadyBookedError: If the slot is already booked.
+            SlotUnavailableError: If the slot is not available.
+            SlotNotBookableYetError: If the booking window has not opened yet.
+            BookingError: If the booking fails for another reason.
+            APIError: If the response is not a valid booking response.
+        """
+        if not self._is_logged_in:
+            raise NotLoggedInError()
+
+        when = slot.start.strftime(TIMESTAMP_FORMAT)
         try:
             self._bookings_manager.book(str(slot.id))
         except SportBotError:
-            logger.error(f"Failed to book class '{activity}' on {when}")
+            logger.error(f"Failed to book class '{slot.activity_name}' on {when}")
             raise
-        logger.info(f"Successfully booked class '{activity}' on {when}")
+        logger.info(f"Successfully booked class '{slot.activity_name}' on {when}")
         return slot
 
     def cancel(self, activity: str, start: datetime | str) -> Slot:
