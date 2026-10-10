@@ -190,6 +190,31 @@ def test_next_execution_across_dst_change(now, expected, utc_offset):
     assert result == (expected - utc_offset).replace(tzinfo=ZoneInfo("UTC"))
 
 
+UTC = ZoneInfo("UTC")
+
+
+@pytest.mark.parametrize(
+    ("now_utc", "expected_utc"),
+    [
+        # Clocks go back on Sunday 2026-10-25 at 03:00 CEST, so 02:00-03:00 happens twice: 00:00-01:00 and 01:00-02:00 UTC
+        pytest.param(datetime(2026, 10, 25, 0, 15), datetime(2026, 10, 25, 0, 30), id="first-pass-before"),
+        pytest.param(datetime(2026, 10, 25, 0, 45), datetime(2026, 10, 25, 1, 30), id="first-pass-after"),
+        pytest.param(datetime(2026, 10, 25, 1, 15), datetime(2026, 10, 25, 1, 30), id="second-pass-before"),
+        pytest.param(datetime(2026, 10, 25, 1, 45), datetime(2026, 11, 1, 1, 30), id="second-pass-after"),
+        # Clocks go forward on Sunday 2026-03-29 at 02:00 CET, so 02:30 does not exist and runs at 03:30 CEST
+        pytest.param(datetime(2026, 3, 29, 0, 45), datetime(2026, 3, 29, 1, 30), id="nonexistent-time"),
+    ],
+)
+def test_next_execution_at_ambiguous_dst_time_is_ahead(now_utc, expected_utc):
+    now = now_utc.replace(tzinfo=UTC).astimezone(MADRID)
+
+    result = next_execution(WeeklyTime(SUNDAY, time(2, 30)), now)
+
+    # Aware datetimes in a repeated or skipped hour never equal those in another zone (PEP 495), so compare instants
+    assert result.timestamp() == expected_utc.replace(tzinfo=UTC).timestamp()
+    assert result.timestamp() > now.timestamp()
+
+
 @pytest.mark.parametrize(
     ("now", "hours_until_execution"),
     [
@@ -252,12 +277,28 @@ def test_cli_reports_config_error_without_traceback(mocked_api, tmp_path, monkey
     assert len(mocked_api.calls) == 0
 
 
-@pytest.mark.parametrize("value", ["0", "-2", "two"])
-def test_cli_rejects_invalid_max_threads(value, config_path, monkeypatch, capsys):
-    monkeypatch.setattr(sys, "argv", ["pysportbot.service", "--config", str(config_path), "--max-threads", value])
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("--max-threads", "0"),
+        ("--max-threads", "-2"),
+        ("--max-threads", "two"),
+        ("--retry-attempts", "0"),
+        ("--retry-delay", "-1"),
+        ("--booking-delay", "-1"),
+        ("--booking-delay", "1.5"),
+        ("--time-zone", "Mars/Base"),
+        ("--time-zone", "../etc"),
+        ("--log-level", "LOUD"),
+    ],
+)
+def test_cli_rejects_invalid_arguments(option, value, config_path, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["pysportbot.service", "--config", str(config_path), option, value])
 
     with pytest.raises(SystemExit) as exc_info:
         main()
 
     assert exc_info.value.code == 2
-    assert "--max-threads" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert f"argument {option}:" in err
+    assert "Traceback" not in err

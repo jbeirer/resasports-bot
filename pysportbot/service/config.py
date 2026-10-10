@@ -171,6 +171,9 @@ def _weekday(value: Any, where: str, errors: list[str]) -> int:
 
 
 def _time(value: Any, where: str, errors: list[str]) -> dt.time:
+    # TOML parses an unquoted local time such as `class_time = 18:00:00` into a time
+    if isinstance(value, dt.time) and value.tzinfo is None:
+        return value
     if isinstance(value, str):
         for fmt in TIME_FORMATS:
             try:

@@ -79,6 +79,13 @@ def test_load_config_rejects_bad_files(tmp_path, name, content, match):
         load_config(path, env={})
 
 
+def test_load_toml_native_time(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text(TOML.replace('class_time = "18:00"', "class_time = 18:00:00"))
+
+    assert load_config(path, env=ENV).classes[0].time == time(18, 0)
+
+
 def test_load_config_missing_file(tmp_path):
     with pytest.raises(ConfigError, match="Cannot read config file"):
         load_config(tmp_path / "missing.json", env={})

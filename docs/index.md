@@ -121,7 +121,7 @@ The configuration supports these keys:
 
 - **Env vars** override the corresponding keys in the file. Empty env vars are ignored.
 - **Weekdays** are English day names or their 3-letter abbreviations, case-insensitive, e.g. `Monday` or `mon`.
-- **Times** use the 24-hour format `HH:MM` or `HH:MM:SS`, e.g. `18:00`.
+- **Times** use the 24-hour format `HH:MM` or `HH:MM:SS`, e.g. `18:00`. In TOML, unquoted times such as `class_time = 18:00:00` work too.
 - **Unknown keys** are errors, e.g. a misspelled `center`. The service reports all problems in the file at once.
 
 Currently, two types of configuration are supported:
@@ -192,7 +192,7 @@ Currently supported options include:
 5. `--log-level`: sets the log-level of the service [default: INFO]
 6. `--max-threads`: caps the number of classes booked in parallel, must be a positive integer [default: no cap]
 
-If the configuration is invalid, the service prints the problems and exits with code 2.
+If the configuration or an option is invalid, the service prints the problems without a traceback and exits with code 2.
 
 ## Automating Weekly Bookings with GitHub Actions
 
