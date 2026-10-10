@@ -159,4 +159,4 @@ def schedule_bookings(
             try:
                 future.result()
             except Exception:
-                logger.error(f"Booking for '{activity}' at {class_time} failed.")
+                logger.exception(f"Booking for '{activity}' at {class_time} failed.")
