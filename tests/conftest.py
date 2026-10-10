@@ -1,5 +1,7 @@
+import io
 import json
 import logging
+import sys
 import threading
 from datetime import datetime, tzinfo
 from pathlib import Path
@@ -12,6 +14,7 @@ import responses
 
 from pysportbot import SportBot
 from pysportbot.endpoints import Endpoints
+from pysportbot.service.config import ENV_VARS, NOTIFY_ENV_VARS
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -169,3 +172,19 @@ def credentials_env(monkeypatch) -> dict[str, str]:
     for name, value in CREDENTIALS_ENV.items():
         monkeypatch.setenv(name, value)
     return CREDENTIALS_ENV
+
+
+@pytest.fixture
+def cli_env(monkeypatch):
+    """
+    Run a CLI test without credentials or notification settings in the env, without a terminal on stdin, and with a
+    fresh "pysportbot" log handler, which `main()` then binds to the stderr that `capsys` captures.
+    """
+    for name in (*ENV_VARS.values(), *NOTIFY_ENV_VARS.values()):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.setattr(sys, "stdin", io.StringIO())
+    logger = logging.getLogger("pysportbot")
+    monkeypatch.setattr(logger, "handlers", [h for h in logger.handlers if not hasattr(h, "_pysportbot_handler")])
+    monkeypatch.setattr(logger, "level", logger.level)
+    monkeypatch.setattr(logger, "propagate", logger.propagate)
