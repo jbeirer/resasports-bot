@@ -1,12 +1,14 @@
+from pysportbot import Activity
+
+
 def test_fetch_activities(bot):
     """Test fetching activities."""
-    activities = bot.activities(limit=5)
-    assert not activities.empty, "No activities fetched. Check server or credentials."
+    activities = bot.activities()[:5]
+    assert activities, "No activities fetched. Check server or credentials."
 
 
-def test_activities_columns(bot):
-    """Test that activities contain expected columns."""
-    activities = bot.activities(limit=1)
-    expected_columns = ["name_activity", "id_activity"]
-    for column in expected_columns:
-        assert column in activities.columns, f"Missing column: {column}"
+def test_activities_are_models(bot):
+    """Test that activities are parsed into Activity models."""
+    for activity in bot.activities():
+        assert isinstance(activity, Activity)
+        assert activity.name, f"Activity {activity.id} has no name"

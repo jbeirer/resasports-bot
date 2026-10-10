@@ -1,18 +1,18 @@
 from datetime import UTC, date, datetime, timedelta
 from unittest.mock import patch
 from urllib.parse import parse_qs
+from zoneinfo import ZoneInfo
 
 import pytest
 import responses
 
-from pysportbot import SportBot
+from pysportbot import Activity, SportBot
 from pysportbot.activities import SLOTS_READ_TIMEOUT, Activities
 from pysportbot.authenticator import Authenticator
 from pysportbot.client import ApiClient
 from pysportbot.endpoints import Endpoints
 from pysportbot.exceptions import ActivityNotFoundError, APIError
 
-ACTIVITY_COLUMNS = ["id_activity", "name_activity", "id_category_activity"]
 DAY = "2030-01-04"
 EMPTY_CALENDAR = {"data": {"activities_calendar": []}}
 # 00:30 on 2030-01-04 in Madrid, but still 2030-01-03 in UTC
@@ -37,13 +37,26 @@ def _slots_calls(mocked_api):
 
 
 def test_fetch_dedupes_by_id_activity(activities, payloads):
-    df = activities.fetch()
+    result = activities.fetch()
 
     calendar = payloads["activities_calendar"]["data"]["activities_calendar"]
     unique_ids = list(dict.fromkeys(slot["id_activity"] for slot in calendar))
     assert len(calendar) > len(unique_ids), "fixture should contain duplicate id_activity values"
-    assert list(df.columns) == ACTIVITY_COLUMNS
-    assert df["id_activity"].tolist() == unique_ids
+    assert [a.id for a in result] == unique_ids
+    assert result[0] == Activity(id=101, name="Yoga", category_id=10)
+
+
+def test_fetch_keeps_first_occurrence_and_coerces_ids(activities, mocked_api, payloads):
+    calendar = payloads["activities_calendar"]["data"]["activities_calendar"]
+    # The same activity with its id as a string, under a different name: the first entry wins
+    duplicate = {**calendar[0], "id_activity": str(calendar[0]["id_activity"]), "name_activity": "Yoga (renamed)"}
+    mocked_api.replace(
+        responses.POST, str(Endpoints.SLOTS), json={"data": {"activities_calendar": [*calendar, duplicate]}}
+    )
+
+    result = activities.fetch()
+
+    assert [a.name for a in result] == ["Yoga", "Gimnasio", "Pilates"]
 
 
 def test_fetch_sends_user_and_week_window(activities, mocked_api, payloads):
@@ -57,13 +70,11 @@ def test_fetch_sends_user_and_week_window(activities, mocked_api, payloads):
     assert date.fromisoformat(end) - date.fromisoformat(start) == timedelta(days=7)
 
 
-def test_fetch_empty_calendar(activities, mocked_api):
-    mocked_api.replace(responses.POST, str(Endpoints.SLOTS), json=EMPTY_CALENDAR)
+@pytest.mark.parametrize("calendar", [pytest.param([], id="empty"), pytest.param(None, id="null")])
+def test_fetch_empty_calendar(activities, mocked_api, calendar):
+    mocked_api.replace(responses.POST, str(Endpoints.SLOTS), json={"data": {"activities_calendar": calendar}})
 
-    df = activities.fetch()
-
-    assert df.empty
-    assert list(df.columns) == ACTIVITY_COLUMNS
+    assert activities.fetch() == []
 
 
 @pytest.mark.parametrize(
@@ -72,6 +83,8 @@ def test_fetch_empty_calendar(activities, mocked_api):
         pytest.param({"status": 500}, id="non-200"),
         pytest.param({"body": "not json"}, id="invalid-json"),
         pytest.param({"json": {"data": {}}}, id="missing-key"),
+        pytest.param({"json": {"data": {"activities_calendar": {"id_activity": 1}}}}, id="not-a-list"),
+        pytest.param({"json": {"data": {"activities_calendar": [{"name_activity": "Yoga"}]}}}, id="missing-field"),
     ],
 )
 def test_fetch_failure_raises(activities, mocked_api, response_kwargs):
@@ -82,21 +95,55 @@ def test_fetch_failure_raises(activities, mocked_api, response_kwargs):
 
 
 def test_daily_slots_filters_to_activity(activities, payloads):
-    df_activities = activities.fetch()
+    acts = activities.fetch()
 
-    df = activities.daily_slots(df_activities, "Yoga", DAY)
+    slots = activities.daily_slots(acts, "Yoga", DAY)
 
     calendar = payloads["activities_calendar"]["data"]["activities_calendar"]
     expected = [s["id_activity_calendar"] for s in calendar if s["name_activity"] == "Yoga"]
     assert len(expected) >= 2, "fixture should contain the same activity at two times"
-    assert set(df["name_activity"]) == {"Yoga"}
-    assert df["id_activity_calendar"].tolist() == expected
+    assert {s.activity_name for s in slots} == {"Yoga"}
+    assert [s.id for s in slots] == expected
+
+
+def test_daily_slots_matches_str_activity_ids(activities, mocked_api, payloads):
+    """The API may send ids as strings; the filter compares them as integers."""
+    acts = activities.fetch()
+    calendar = payloads["activities_calendar"]["data"]["activities_calendar"]
+    as_str = [{**s, "id_activity": str(s["id_activity"])} for s in calendar]
+    mocked_api.replace(responses.POST, str(Endpoints.SLOTS), json={"data": {"activities_calendar": as_str}})
+
+    slots = activities.daily_slots(acts, "Yoga", DAY)
+
+    assert [s.id for s in slots] == [5001, 5003]
+
+
+@pytest.mark.parametrize("time_zone", ["Europe/Madrid", "America/New_York"])
+def test_daily_slots_times_in_configured_time_zone(mocked_api, time_zone):
+    client = ApiClient()
+    auth = Authenticator(client)
+    auth.login("user@example.com", "password")
+    activities = Activities(client, auth, time_zone=time_zone)
+
+    slots = activities.daily_slots(activities.fetch(), "Yoga", DAY)
+
+    assert slots[0].start == datetime(2030, 1, 4, 9, tzinfo=ZoneInfo(time_zone))
+
+
+def test_daily_slots_malformed_entry_raises(activities, mocked_api, payloads):
+    acts = activities.fetch()
+    calendar = payloads["activities_calendar"]["data"]["activities_calendar"]
+    del calendar[0]["start_timestamp"]
+    mocked_api.replace(responses.POST, str(Endpoints.SLOTS), json=payloads["activities_calendar"])
+
+    with pytest.raises(APIError, match="'start_timestamp'"):
+        activities.daily_slots(acts, "Yoga", DAY)
 
 
 def test_daily_slots_request_body(activities, mocked_api, payloads):
-    df_activities = activities.fetch()
+    acts = activities.fetch()
 
-    activities.daily_slots(df_activities, "Yoga", DAY)
+    activities.daily_slots(acts, "Yoga", DAY)
 
     calendar = payloads["activities_calendar"]["data"]["activities_calendar"]
     yoga_category = next(s["id_category_activity"] for s in calendar if s["name_activity"] == "Yoga")
@@ -110,10 +157,18 @@ def test_daily_slots_request_body(activities, mocked_api, payloads):
     }
 
 
-def test_daily_slots_sends_canonical_date(activities, mocked_api):
-    df_activities = activities.fetch()
+@pytest.mark.parametrize(
+    "day",
+    [
+        pytest.param(DAY.replace("-", ""), id="basic-iso"),
+        pytest.param(date(2030, 1, 4), id="date"),
+        pytest.param(datetime(2030, 1, 4, 18, 30), id="datetime"),
+    ],
+)
+def test_daily_slots_sends_canonical_date(activities, mocked_api, day):
+    acts = activities.fetch()
 
-    activities.daily_slots(df_activities, "Yoga", DAY.replace("-", ""))
+    activities.daily_slots(acts, "Yoga", day)
 
     body = parse_qs(_slots_calls(mocked_api)[-1].request.body)
     assert body["start_timestamp"] == body["end_timestamp"] == [DAY]
@@ -121,32 +176,30 @@ def test_daily_slots_sends_canonical_date(activities, mocked_api):
 
 @pytest.mark.parametrize("day", ["2030-13-01", "2030-02-30", "04/01/2030", "tomorrow", ""])
 def test_daily_slots_invalid_day_raises_before_request(activities, mocked_api, day):
-    df_activities = activities.fetch()
+    acts = activities.fetch()
     n_calls = len(mocked_api.calls)
 
     with pytest.raises(ValueError, match=f"Invalid day '{day}'"):
-        activities.daily_slots(df_activities, "Yoga", day)
+        activities.daily_slots(acts, "Yoga", day)
 
     assert len(mocked_api.calls) == n_calls
 
 
 def test_daily_slots_unknown_activity_raises(activities):
-    df_activities = activities.fetch()
+    acts = activities.fetch()
 
     with pytest.raises(ActivityNotFoundError) as exc_info:
-        activities.daily_slots(df_activities, "Zumba", DAY)
+        activities.daily_slots(acts, "Zumba", DAY)
 
     assert exc_info.value.activity == "Zumba"
-    assert exc_info.value.available == df_activities["name_activity"].tolist()
+    assert exc_info.value.available == [a.name for a in acts]
 
 
 def test_daily_slots_empty_calendar(activities, mocked_api):
-    df_activities = activities.fetch()
+    acts = activities.fetch()
     mocked_api.replace(responses.POST, str(Endpoints.SLOTS), json=EMPTY_CALENDAR)
 
-    df = activities.daily_slots(df_activities, "Yoga", DAY)
-
-    assert df.empty
+    assert activities.daily_slots(acts, "Yoga", DAY) == []
 
 
 @pytest.mark.parametrize(
@@ -158,22 +211,20 @@ def test_daily_slots_empty_calendar(activities, mocked_api):
     ],
 )
 def test_daily_slots_failure_raises(activities, mocked_api, response_kwargs):
-    df_activities = activities.fetch()
+    acts = activities.fetch()
     mocked_api.replace(responses.POST, str(Endpoints.SLOTS), **response_kwargs)
 
     with pytest.raises(APIError):
-        activities.daily_slots(df_activities, "Yoga", DAY)
+        activities.daily_slots(acts, "Yoga", DAY)
 
 
 def test_daily_slots_no_matching_activity(activities, mocked_api, payloads):
-    df_activities = activities.fetch()
+    acts = activities.fetch()
     calendar = payloads["activities_calendar"]["data"]["activities_calendar"]
     others = [s for s in calendar if s["name_activity"] != "Yoga"]
     mocked_api.replace(responses.POST, str(Endpoints.SLOTS), json={"data": {"activities_calendar": others}})
 
-    df = activities.daily_slots(df_activities, "Yoga", DAY)
-
-    assert df.empty
+    assert activities.daily_slots(acts, "Yoga", DAY) == []
 
 
 @pytest.mark.parametrize(
@@ -211,8 +262,8 @@ def test_sportbot_passes_time_zone_to_activities(mocked_api, centre_slug):
 
 @pytest.mark.parametrize("method", ["fetch", "daily_slots"])
 def test_requests_use_slots_timeout(activities, method):
-    df_activities = activities.fetch()
-    args = (df_activities, "Yoga", DAY) if method == "daily_slots" else ()
+    acts = activities.fetch()
+    args = (acts, "Yoga", DAY) if method == "daily_slots" else ()
 
     with patch.object(activities.client.session, "request", wraps=activities.client.session.request) as post:
         getattr(activities, method)(*args)

@@ -4,8 +4,7 @@ from datetime import datetime
 from unittest.mock import MagicMock, call, mock_open, patch
 from zoneinfo import ZoneInfo
 
-import pandas as pd
-
+from pysportbot import Activity
 from pysportbot.exceptions import ConfigError, SlotAlreadyBookedError, SlotNotFoundError
 from pysportbot.service.booking import attempt_booking, schedule_bookings
 
@@ -140,7 +139,7 @@ class TestConfigValidator(unittest.TestCase):
         validate_activities raises an error.
         """
         mock_bot_instance = mock_sportbot_class.return_value
-        mock_bot_instance.activities.return_value = pd.DataFrame({"name_activity": ["Yoga"]})
+        mock_bot_instance.activities.return_value = [Activity(id=101, name="Yoga", category_id=10)]
 
         config = {
             "email": "test@example.com",
@@ -420,20 +419,18 @@ class TestBooking(unittest.TestCase):
         mock_datetime_sched.now.return_value = mock_now
 
         mock_bot = MagicMock()
-        # The returned daily_slots matches the requested "18:00:00" on 2024-01-10
-        mock_bot.daily_slots.return_value = pd.DataFrame({"start_timestamp": ["2024-01-10 18:00:00"]})
 
         attempt_booking(
             bot=mock_bot,
             activity="Yoga",
-            class_day="Wednesday",  # This maps to 2024-01-10 from our patch
+            class_day="Wednesday",  # Today is Wednesday, so this maps to next week's 2024-01-17
             class_time="18:00:00",
             retry_attempts=3,
             retry_delay=1,
             time_zone="Europe/Madrid",
         )
-        # If a slot matches, we book exactly once
-        mock_bot.book.assert_called_once()
+        # The bot is asked for the aware start time, exactly once
+        mock_bot.book.assert_called_once_with(activity="Yoga", start=datetime(2024, 1, 17, 18, 0, tzinfo=tz))
 
     @patch("pysportbot.service.booking.logger")
     @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
@@ -481,7 +478,6 @@ class TestBooking(unittest.TestCase):
         mock_datetime_sched.now.return_value = mock_now
 
         mock_bot = MagicMock()
-        mock_bot.daily_slots.return_value = pd.DataFrame({"start_timestamp": ["2024-01-10 18:00:00"]})
         # First attempt raises 'slot already booked', so we skip subsequent attempts
         mock_bot.book.side_effect = [SlotAlreadyBookedError("123", 5)]
 

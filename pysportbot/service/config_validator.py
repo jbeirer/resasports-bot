@@ -83,8 +83,7 @@ def validate_activities(bot: SportBot, config: dict[str, Any]) -> None:
         ConfigError: If an activity is not found.
     """
     logger.info("Fetching available activities for validation...")
-    available_activities = bot.activities()
-    available_activity_names = set(available_activities["name_activity"].tolist())
+    available_activity_names = {a.name for a in bot.activities()}
 
     logger.debug(f"Available activities: {available_activity_names}")
 

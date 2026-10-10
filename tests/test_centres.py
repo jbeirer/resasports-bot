@@ -1,126 +1,92 @@
-# test_centres.py
+import logging
 
-import logging  # Import logging to set log levels
-from unittest.mock import patch
-
-import pandas as pd
 import pytest
 import requests
 import responses
 
-from pysportbot import SportBot
+from pysportbot import Centre, SportBot
 from pysportbot.centres import Centres
 from pysportbot.client import ApiClient
 from pysportbot.endpoints import Endpoints
 from pysportbot.exceptions import APIError, CentreNotFoundError
 
 
+def _centre_calls(mocked_api):
+    return [c for c in mocked_api.calls if c.request.url == str(Endpoints.CENTRE)]
+
+
+def test_sportbot_init_makes_no_http_calls(mocked_api):
+    SportBot()
+
+    assert len(mocked_api.calls) == 0
+
+
+def test_centres_returns_models(mocked_api, payloads):
+    centres = SportBot().centres()
+
+    assert all(isinstance(c, Centre) for c in centres)
+    assert [c.slug for c in centres] == [app["slug"] for app in payloads["centres"]["applications"]]
+    assert centres[0] == Centre(
+        slug="test-centre", name="Test Centre", town="Testville", country="Spain", address="Calle Falsa 123"
+    )
+
+
 @pytest.mark.parametrize(
-    "print_centres, expected_contains",
+    ("search", "expected"),
     [
-        (True, ["centre1", "centre2"]),
-        (False, []),
+        pytest.param("other", ["other-centre"], id="slug"),
+        pytest.param("THIRD CENTRE", ["third-centre"], id="name-ignores-case"),
+        pytest.param("testville", ["test-centre"], id="town"),
+        pytest.param("centre", ["test-centre", "other-centre", "third-centre"], id="several"),
+        pytest.param("madrid", [], id="no-match"),
+        pytest.param("", ["test-centre", "other-centre", "third-centre"], id="empty"),
+        pytest.param(None, ["test-centre", "other-centre", "third-centre"], id="none"),
     ],
 )
-def test_print_centres_behavior(print_centres, expected_contains, pysportbot_caplog):
-    """
-    Parametrized test to verify the behavior of the `print_centres` parameter.
-
-    - When `print_centres=True`, ensure that centres are logged.
-    - When `print_centres=False`, ensure that centres are not logged.
-    """
-    # Create a mock DataFrame of centres
-    mock_df = pd.DataFrame(
-        {
-            "slug": ["centre1", "centre2"],
-            "name": ["My Centre 1", "My Centre 2"],
-            "address.town": ["Town A", "Town B"],
-            "address.country": ["Country A", "Country B"],
-            "address.street_line": ["Street A", "Street B"],
-        }
-    )
-
-    # Patch the `fetch_centres` method to return the mock DataFrame
-    with patch("pysportbot.centres.Centres.fetch_centres", return_value=mock_df):
-        # Set the log level to INFO to capture info logs
-        pysportbot_caplog.set_level(logging.INFO)
-
-        # Initialize SportBot with the specified `print_centres` parameter
-        SportBot(print_centres=print_centres)
-
-    # Access the captured logs
-    logs = pysportbot_caplog.text.lower()
-
-    if print_centres:
-        # Assert that each expected centre slug is present in the logs
-        for centre_slug in expected_contains:
-            assert centre_slug in logs, f"Expected '{centre_slug}' to be logged, but it wasn't."
-    else:
-        # Assert that none of the centre slugs are present in the logs
-        for centre_slug in ["centre1", "centre2"]:
-            assert centre_slug not in logs, f"Did not expect '{centre_slug}' to be logged, but it was."
+def test_centres_search(mocked_api, search, expected):
+    assert [c.slug for c in SportBot().centres(search=search)] == expected
 
 
-def test_print_centres_outputs_non_empty_list(pysportbot_caplog):
-    """
-    Test that initializing SportBot with `print_centres=True` logs a non-empty list of centres.
-    """
-    # Create a mock DataFrame with centres
-    mock_df = pd.DataFrame(
-        {
-            "slug": ["centre1", "centre2"],
-            "name": ["My Centre 1", "My Centre 2"],
-            "address.town": ["Town A", "Town B"],
-            "address.country": ["Country A", "Country B"],
-            "address.street_line": ["Street A", "Street B"],
-        }
-    )
+def test_centres_search_skips_missing_town(mocked_api, payloads):
+    payloads["centres"]["applications"][0]["address"] = {}
+    mocked_api.replace(responses.POST, str(Endpoints.CENTRE), json=payloads["centres"])
 
-    # Patch the `fetch_centres` method to return the mock DataFrame
-    with patch("pysportbot.centres.Centres.fetch_centres", return_value=mock_df):
-        # Set the log level to INFO to capture info logs
-        pysportbot_caplog.set_level(logging.INFO)
-
-        # Initialize SportBot with print_centres=True
-        SportBot(print_centres=True)
-
-    # Access the captured logs
-    logs = pysportbot_caplog.text.lower()
-
-    # Verify that each centre slug is present in the logs
-    assert "centre1" in logs, "Expected 'centre1' to be logged, but it wasn't."
-    assert "centre2" in logs, "Expected 'centre2' to be logged, but it wasn't."
+    assert [c.slug for c in SportBot().centres(search="ville")] == ["other-centre", "third-centre"]
 
 
-def test_print_centres_does_not_output_when_disabled(pysportbot_caplog):
-    """
-    Test that initializing SportBot with `print_centres=False` does not log the list of centres.
-    """
-    # Create a mock DataFrame with centres
-    mock_df = pd.DataFrame(
-        {
-            "slug": ["centre1", "centre2"],
-            "name": ["My Centre 1", "My Centre 2"],
-            "address.town": ["Town A", "Town B"],
-            "address.country": ["Country A", "Country B"],
-            "address.street_line": ["Street A", "Street B"],
-        }
-    )
+def test_centres_fetched_once(mocked_api, centre_slug):
+    bot = SportBot()
 
-    # Patch the `fetch_centres` method to return the mock DataFrame
-    with patch("pysportbot.centres.Centres.fetch_centres", return_value=mock_df):
-        # Set the log level to INFO to capture info logs
-        pysportbot_caplog.set_level(logging.INFO)
+    bot.centres()
+    bot.centres(search="test")
+    bot.login("user@example.com", "password", centre_slug)
 
-        # Initialize SportBot with print_centres=False
-        SportBot(print_centres=False)
+    assert len(_centre_calls(mocked_api)) == 1
 
-    # Access the captured logs
-    logs = pysportbot_caplog.text.lower()
 
-    # Verify that centre slugs are not present in the logs
-    assert "centre1" not in logs, "Did not expect 'centre1' to be logged, but it was."
-    assert "centre2" not in logs, "Did not expect 'centre2' to be logged, but it was."
+def test_centres_returns_copy(mocked_api):
+    bot = SportBot()
+
+    bot.centres().clear()
+
+    assert len(bot.centres()) == 3
+
+
+def test_login_fetches_centres(mocked_api, centre_slug):
+    SportBot().login("user@example.com", "password", centre_slug)
+
+    assert len(_centre_calls(mocked_api)) == 1
+
+
+def test_login_unknown_centre_raises_before_login_request(mocked_api, pysportbot_caplog):
+    pysportbot_caplog.set_level(logging.INFO)
+
+    with pytest.raises(CentreNotFoundError) as exc_info:
+        SportBot().login("user@example.com", "password", "unknown")
+
+    assert exc_info.value.centre == "unknown"
+    assert [c.request.url for c in mocked_api.calls] == [str(Endpoints.CENTRE)]
+    assert "test-centre, other-centre, third-centre" in pysportbot_caplog.text
 
 
 def test_check_centre_unknown_raises(mocked_api):
@@ -148,16 +114,36 @@ def test_check_centre_valid_slug_passes(mocked_api, centre_slug):
         pytest.param({"body": "not json"}, 200, id="invalid-json"),
         pytest.param({"json": {}}, None, id="missing-applications"),
         pytest.param({"json": {"applications": []}}, None, id="empty"),
-        pytest.param({"json": {"applications": [{"slug": "no-address"}]}}, None, id="missing-columns"),
+        pytest.param({"json": {"applications": {"slug": "x"}}}, None, id="not-a-list"),
+        pytest.param({"json": {"applications": [{"slug": "no-name"}]}}, None, id="missing-name"),
+        pytest.param({"json": {"applications": ["test-centre"]}}, None, id="not-an-object"),
         pytest.param({"body": requests.ConnectionError("connection refused")}, None, id="connection-error"),
     ],
 )
-def test_fetch_centres_failure_raises_api_error(mocked_api, response_kwargs, status_code):
+@pytest.mark.parametrize(
+    "call",
+    [
+        pytest.param(lambda bot: bot.centres(), id="centres"),
+        pytest.param(lambda bot: bot.login("user@example.com", "password", "test-centre"), id="login"),
+    ],
+)
+def test_fetch_centres_failure_raises_api_error(mocked_api, response_kwargs, status_code, call):
     """A failed centre fetch raises a clear APIError instead of `KeyError: 'slug'`."""
     mocked_api.replace(responses.POST, str(Endpoints.CENTRE), **response_kwargs)
 
     with pytest.raises(APIError) as exc_info:
-        SportBot()
+        call(SportBot())
 
     assert exc_info.value.endpoint == str(Endpoints.CENTRE)
     assert exc_info.value.status_code == status_code
+
+
+def test_failed_fetch_is_not_cached(mocked_api, payloads):
+    mocked_api.replace(responses.POST, str(Endpoints.CENTRE), status=500)
+    mocked_api.add(responses.POST, str(Endpoints.CENTRE), json=payloads["centres"])
+    bot = SportBot()
+
+    with pytest.raises(APIError):
+        bot.centres()
+
+    assert len(bot.centres()) == 3
