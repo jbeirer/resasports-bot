@@ -35,7 +35,7 @@ def bot(live_credentials):
     email, password, centre = live_credentials
 
     # Create a new SportBot instance with DEBUG logging
-    bot = SportBot(log_level="DEBUG", print_centres=False, time_zone="Europe/Madrid")
+    bot = SportBot(log_level="DEBUG", time_zone="Europe/Madrid")
 
     # Log in to user account
     bot.login(email, password, centre)

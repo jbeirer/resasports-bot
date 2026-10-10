@@ -4,13 +4,11 @@ from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-import pandas as pd
-from pandas import DataFrame
-
 from .authenticator import Authenticator
 from .client import ApiClient
 from .endpoints import Endpoints
 from .exceptions import ActivityNotFoundError, APIError
+from .models import Activity, Slot
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +24,7 @@ class Activities:
         self.client = client
         # Provides id_user and id_application for every request
         self.auth = auth
-        # Time zone used to determine "today"
+        # Time zone used to determine "today" and attached to slot times
         self.time_zone = time_zone
 
     def _calendar(self, start: str, end: str, **extra: Any) -> list[dict[str, Any]]:
@@ -53,9 +51,14 @@ class Activities:
             raise APIError(
                 f"Missing expected key in response: {err}", endpoint=Endpoints.SLOTS, body=json.dumps(data)
             ) from err
+        # An empty calendar may come as null; anything else must be a list of entries
+        if calendar is None:
+            return []
+        if not isinstance(calendar, list):
+            raise APIError("The activities calendar is not a list", endpoint=Endpoints.SLOTS, body=json.dumps(data))
         return calendar
 
-    def fetch(self, days_ahead: int = 7) -> DataFrame:
+    def fetch(self, days_ahead: int = 7) -> list[Activity]:
         """
         Fetch all available unique activities within a specified time range using SLOTS endpoint.
 
@@ -63,8 +66,7 @@ class Activities:
             days_ahead (int): Number of days from now to fetch activities for. Defaults to 7.
 
         Returns:
-            DataFrame: A DataFrame containing unique activity details with columns:
-                    ['id_activity', 'name_activity', 'id_category_activity']
+            list[Activity]: The unique activities, in calendar order; the first entry of each activity ID wins.
 
         Raises:
             APIError: If the request fails or the response cannot be parsed.
@@ -73,93 +75,80 @@ class Activities:
 
         # Date range in the configured time zone; the API expects plain 'YYYY-MM-DD' dates
         today = datetime.now(ZoneInfo(self.time_zone)).date()
-        activities = self._calendar(today.isoformat(), (today + timedelta(days=days_ahead)).isoformat())
+        calendar = self._calendar(today.isoformat(), (today + timedelta(days=days_ahead)).isoformat())
 
-        if not activities:
+        if not calendar:
             logger.warning("No activities found in the response.")
-            return pd.DataFrame(columns=["id_activity", "name_activity", "id_category_activity"])
+            return []
 
-        try:
-            # Keep the first occurrence of each activity, and only the required columns
-            df_activities = pd.DataFrame(activities).drop_duplicates(subset=["id_activity"])
-            df_activities = df_activities[["id_activity", "name_activity", "id_category_activity"]].reset_index(
-                drop=True
-            )
-        except Exception as err:
-            logger.error(f"Unexpected error while parsing activities: {err}")
-            raise APIError(f"Unexpected error while parsing activities: {err}", endpoint=Endpoints.SLOTS) from err
+        # Keep the first occurrence of each activity
+        activities: dict[int, Activity] = {}
+        for entry in calendar:
+            activity = Activity.from_api(entry)
+            activities.setdefault(activity.id, activity)
 
-        logger.info(f"Successfully fetched {len(df_activities)} unique activities.")
-        return df_activities
+        logger.info(f"Successfully fetched {len(activities)} unique activities.")
+        return list(activities.values())
 
-    def daily_slots(self, df_activities: DataFrame, activity_name: str, day: str) -> DataFrame:
+    def daily_slots(self, activities: list[Activity], activity_name: str, day: date | str) -> list[Slot]:
         """
         Fetch available slots for a specific activity on a given day.
 
         Args:
-            df_activities (DataFrame): The DataFrame of activities.
+            activities (list[Activity]): The activities returned by `fetch()`.
             activity_name (str): The name of the activity.
-            day (str): The day in 'YYYY-MM-DD' format.
+            day (date | str): The day, as a date or in 'YYYY-MM-DD' format.
 
         Returns:
-            DataFrame: A DataFrame containing available slots.
+            list[Slot]: The slots of the activity on that day, in calendar order.
 
         Raises:
             ValueError: If `day` is not a valid 'YYYY-MM-DD' date.
             ActivityNotFoundError: If the specified activity is not found.
-            APIError: If slots cannot be fetched.
+            APIError: If slots cannot be fetched or parsed.
         """
         # Fail fast on a bad date, and send it to the API in canonical 'YYYY-MM-DD' form
-        try:
-            day = date.fromisoformat(day).isoformat()
-        except ValueError as err:
-            raise ValueError(f"Invalid day '{day}'. Use the format 'YYYY-MM-DD', e.g. '2025-01-03'.") from err
+        day_str = _to_day(day)
 
-        logger.info(f"Fetching available slots for '{activity_name}' on {day}...")
+        logger.info(f"Fetching available slots for '{activity_name}' on {day_str}...")
 
         # Check if the activity exists
-        activity_match = df_activities[df_activities["name_activity"] == activity_name]
-        if activity_match.empty:
-            error = ActivityNotFoundError(activity_name, df_activities["name_activity"].unique().tolist())
+        activity = next((a for a in activities if a.name == activity_name), None)
+        if activity is None:
+            error = ActivityNotFoundError(activity_name, list(dict.fromkeys(a.name for a in activities)))
             logger.error(str(error))
             raise error
 
-        activity = activity_match.iloc[0]
-        id_activity = activity["id_activity"]
-        id_category_activity = activity["id_category_activity"]
-
         # Fetch slots; the API takes the same 'YYYY-MM-DD' day as start and end
-        slots = self._calendar(day, day, id_category_activity=id_category_activity)
+        calendar = self._calendar(day_str, day_str, id_category_activity=activity.category_id)
 
+        if not calendar:
+            logger.warning(f"No slots available for activity '{activity_name}' on {day_str}.")
+            return []
+
+        logger.debug(f"Daily slots fetched for '{activity_name}' on {day_str}.")
+
+        # The calendar lists the whole category, so only keep slots of the specified activity
+        slots = [Slot.from_api(entry, self.time_zone) for entry in calendar]
+        slots = [slot for slot in slots if slot.activity_id == activity.id]
         if not slots:
-            logger.warning(f"No slots available for activity '{activity_name}' on {day}.")
-            return DataFrame()
+            logger.warning(f"No matching slots found for activity '{activity_name}' on {day_str}.")
 
-        logger.debug(f"Daily slots fetched for '{activity_name}' on {day}.")
+        return slots
 
-        # Filter desired columns
-        columns = [
-            "name_activity",
-            "id_activity_calendar",
-            "id_activity",
-            "id_category_activity",
-            "start_timestamp",
-            "end_timestamp",
-            "n_inscribed",
-            "n_capacity",
-            "n_waiting_list",
-            "cancelled",
-            "trainer_name",
-        ]
-        df_slots = pd.DataFrame(slots)
 
-        # Ensure only desired columns are selected without KeyError
-        df_slots = df_slots.loc[:, df_slots.columns.intersection(columns)]
+def _to_day(day: date | str) -> str:
+    """
+    Return `day` in 'YYYY-MM-DD' form.
 
-        # Only select rows of the specified activity
-        df_slots = df_slots[df_slots.id_activity == int(id_activity)]
-        if df_slots.empty:
-            logger.warning(f"No matching slots found for activity '{activity_name}' on {day}.")
-            return DataFrame()
-
-        return df_slots
+    Raises:
+        ValueError: If `day` is a string that is not a valid ISO date.
+    """
+    if isinstance(day, datetime):
+        return day.date().isoformat()
+    if isinstance(day, date):
+        return day.isoformat()
+    try:
+        return date.fromisoformat(day).isoformat()
+    except ValueError as err:
+        raise ValueError(f"Invalid day '{day}'. Use the format 'YYYY-MM-DD', e.g. '2025-01-03'.") from err

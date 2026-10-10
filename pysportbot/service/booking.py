@@ -36,11 +36,12 @@ def attempt_booking(
         retry_delay (int): Delay between retries.
         time_zone (str): Time zone for execution.
     """
-    booking_date = calculate_class_day(class_day, time_zone).strftime("%Y-%m-%d")
+    booking_date = calculate_class_day(class_day, time_zone).date()
+    start = datetime.combine(booking_date, datetime.strptime(class_time, "%H:%M:%S").time(), tzinfo=ZoneInfo(time_zone))
 
     for attempt_num in range(1, retry_attempts + 1):
         try:
-            bot.book(activity=activity, start_time=f"{booking_date} {class_time}")
+            bot.book(activity=activity, start=start)
 
         except (SlotAlreadyBookedError, SlotFullError) as e:
             # Retrying cannot succeed

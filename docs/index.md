@@ -23,29 +23,39 @@ pip install pysportbot
 ```python
 from pysportbot import SportBot
 
-# Create bot instance, will list available centres if requested
-bot = SportBot(log_level="INFO", print_centres=False, time_zone="Europe/Madrid")
+# Create bot instance; times without a time zone are taken to be in time_zone
+bot = SportBot(log_level="INFO", time_zone="Europe/Madrid")
 
-# Connect to service with email and password as well as the name of the centre
-bot.login("email", "password", "centre")
+# Find your centre (no login needed)
+for c in bot.centres(search="madrid"):
+    print(c.slug, c.name)
 
-# List available activites
-bot.activities(limit=10)
+# Connect to service with email and password as well as the slug of the centre
+bot.login("email", "password", "centre-slug")
 
-# List bookable slots for an activity on a specific day
-bot.daily_slots(activity="YourFavouriteGymClass", day="2025-01-03", limit=10)
+# List available activities
+for a in bot.activities()[:10]:
+    print(a.name)
+
+# List the slots of an activity on a specific day
+for s in bot.daily_slots("Yoga", "2026-01-05"):
+    print(s.start, f"{s.inscribed}/{s.capacity}")
 
 # In long-running scripts, log in again with the same credentials if the session has expired
 bot.ensure_logged_in()
 
-# Book an activity slot on a specific day and time
+# Book an activity slot on a specific day and time, given as a string or a datetime
+# Returns the booked slot as listed before the booking, so `inscribed` does not count your booking yet
 # Raises an exception if the booking fails (e.g. not bookable yet, already booked, full)
-bot.book(activity="YourFavouriteGymClass", start_time="2024-12-30 07:00:00")
+bot.book("Yoga", "2026-01-05 07:00")
 
 # Cancel an activity slot on a specific day and time
 # Raises an exception if the cancellation fails
-bot.cancel(activity="YourFavouriteGymClass", start_time="2024-12-30 07:00:00")
+bot.cancel("Yoga", "2026-01-05 07:00")
 ```
+
+Centres, activities and slots are frozen dataclasses (`Centre`, `Activity`, `Slot`).
+If you prefer pandas, convert them with `pd.DataFrame(map(dataclasses.asdict, slots))`.
 
 ## Error handling
 
@@ -60,7 +70,7 @@ import requests
 from pysportbot import SlotAlreadyBookedError, SlotNotBookableYetError, SportBotError
 
 try:
-    bot.book(activity="YourFavouriteGymClass", start_time="2024-12-30 07:00:00")
+    bot.book("Yoga", "2026-01-05 07:00")
 except SlotNotBookableYetError:
     ...  # the booking window has not opened yet, try again later
 except SlotAlreadyBookedError:

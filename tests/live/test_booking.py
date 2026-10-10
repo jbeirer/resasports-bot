@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from pysportbot import SlotAlreadyBookedError, SlotFullError, SlotNotBookableYetError, SlotUnavailableError
 
@@ -7,7 +8,7 @@ def test_book_and_cancel_activity(bot):
     """Test booking and canceling a Gimnasio session on the upcoming Friday."""
 
     # Determine the upcoming Friday from today
-    today = datetime.now()
+    today = datetime.now(ZoneInfo("Europe/Madrid"))
     # Calculate the days until next Friday (if today is Friday, book for next week)
     days_until_friday = (4 - today.weekday()) % 7
     # Ensure that if it's already Friday, we move to the next Friday (7 days later)
@@ -17,15 +18,14 @@ def test_book_and_cancel_activity(bot):
     friday_str = upcoming_friday.strftime("%Y-%m-%d")
 
     # Fetch available slots for 'Gimnasio' on upcoming Friday
-    slots = bot.daily_slots("Gimnasio", friday_str)
-    assert not slots.empty, f"No Gimnasio slots available for {friday_str}"
+    slots = bot.daily_slots("Gimnasio", upcoming_friday.date())
+    assert slots, f"No Gimnasio slots available for {friday_str}"
 
     # Book the first available slot
     booked_slot = None
-    for _, slot in slots.iterrows():
+    for slot in slots:
         try:
-            bot.book("Gimnasio", slot["start_timestamp"])
-            booked_slot = slot["start_timestamp"]
+            booked_slot = bot.book("Gimnasio", slot.start).start
             break
         except (SlotAlreadyBookedError, SlotUnavailableError, SlotNotBookableYetError, SlotFullError):
             # If the slot is already booked, unavailable, not yet open, or full, move on
