@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
   "requests>=2.34.2",
   "pandas>=3.0.5",
-  "tzdata>=2026.5 ; sys_platform == 'win32'",
+  "tzdata>=2026.5",
 ]
 
 [project.urls]
@@ -67,7 +67,7 @@ disallow_any_unimported = false
 
 
 [tool.deptry.per_rule_ignores]
-# tzdata is never imported: zoneinfo falls back to it on Windows, which has no system time zone database
+# tzdata is never imported: zoneinfo falls back to it where there is no system time zone database (Windows, minimal containers)
 DEP002 = ["tzdata"]
 
 [tool.pytest.ini_options]

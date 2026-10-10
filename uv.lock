@@ -1305,7 +1305,7 @@ default-groups = ["dev", "docs"]
 dependencies = [
     { name = "pandas" },
     { name = "requests" },
-    { name = "tzdata", marker = "sys_platform == 'win32'" },
+    { name = "tzdata" },
 ]
 
 [package.dev-dependencies]
@@ -1328,7 +1328,7 @@ docs = [
 requires-dist = [
     { name = "pandas", specifier = ">=3.0.5" },
     { name = "requests", specifier = ">=2.34.2" },
-    { name = "tzdata", marker = "sys_platform == 'win32'", specifier = ">=2026.5" },
+    { name = "tzdata", specifier = ">=2026.5" },
 ]
 
 [package.metadata.requires-dev]
