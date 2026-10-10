@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, time
+from email.header import decode_header, make_header
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -10,7 +11,7 @@ from pysportbot.cli import main
 from pysportbot.endpoints import Endpoints
 from pysportbot.exceptions import AuthenticationError, ConfigError
 from pysportbot.service import notify
-from pysportbot.service.config import ClassSpec, NotifySettings, ServiceConfig
+from pysportbot.service.config import NOTIFY_LANGUAGES, ClassSpec, NotifySettings, ServiceConfig
 from pysportbot.service.results import BookingResult, BookingStatus
 
 # A secret topic: tests check that it never shows up in the logs or error messages
@@ -59,6 +60,11 @@ def _body(request) -> str:
     return request.body.decode("utf-8")
 
 
+def _title(request) -> str:
+    """The Title header, decoded from RFC 2047 if needed."""
+    return str(make_header(decode_header(request.headers["Title"])))
+
+
 # Message
 
 
@@ -87,6 +93,76 @@ def test_format_summary_dry_run():
     assert body == "✅ Yoga · Mon 2026-01-12 18:00 · dry run"
 
 
+@pytest.mark.parametrize(
+    ("language", "title", "lines"),
+    [
+        (
+            "de",
+            "pysportbot: 1/3 gebucht",
+            [
+                "✅ Yoga · Mo 12.01.2026 18:00 · gebucht (3 Versuche)",
+                "❌ Spinning · Di 13.01.2026 07:00 · ausgebucht",
+                "❌ Pilates · Mi 14.01.2026 09:30 · fehlgeschlagen (3 Versuche): Booking slot 5003 failed (error code 99).",
+            ],
+        ),
+        (
+            "es",
+            "pysportbot: 1/3 reservadas",
+            [
+                "✅ Yoga · lun 12/01/2026 18:00 · reservada (3 intentos)",
+                "❌ Spinning · mar 13/01/2026 07:00 · completa",
+                "❌ Pilates · mié 14/01/2026 09:30 · fallida (3 intentos): Booking slot 5003 failed (error code 99).",
+            ],
+        ),
+        (
+            "fr",
+            "pysportbot: 1/3 réservés",
+            [
+                "✅ Yoga · lun. 12/01/2026 18:00 · réservé (3 tentatives)",
+                "❌ Spinning · mar. 13/01/2026 07:00 · complet",
+                "❌ Pilates · mer. 14/01/2026 09:30 · échec (3 tentatives): Booking slot 5003 failed (error code 99).",
+            ],
+        ),
+        (
+            "it",
+            "pysportbot: 1/3 prenotate",
+            [
+                "✅ Yoga · lun 12/01/2026 18:00 · prenotata (3 tentativi)",
+                "❌ Spinning · mar 13/01/2026 07:00 · al completo",
+                "❌ Pilates · mer 14/01/2026 09:30 · non riuscita (3 tentativi): Booking slot 5003 failed (error code 99).",
+            ],
+        ),
+    ],
+)
+def test_format_summary_languages(language, title, lines):
+    assert notify.format_summary([YOGA, SPINNING, PILATES], language=language) == (title, "\n".join(lines))
+
+
+@pytest.mark.parametrize(
+    ("language", "title"),
+    [
+        ("de", "[Testlauf] pysportbot: 1/1 buchbar"),
+        ("es", "[simulación] pysportbot: 1/1 reservables"),
+        ("fr", "[simulation] pysportbot: 1/1 réservables"),
+        ("it", "[simulazione] pysportbot: 1/1 prenotabili"),
+    ],
+)
+def test_format_summary_dry_run_languages(language, title):
+    assert notify.format_summary([YOGA_DRY_RUN], dry_run=True, language=language)[0] == title
+
+
+@pytest.mark.parametrize("language", NOTIFY_LANGUAGES)
+def test_every_language_is_complete(language):
+    texts = notify.TEXTS[language]
+
+    assert set(texts.statuses) == set(BookingStatus)
+    assert len(texts.weekdays) == 7
+
+
+def test_languages_match_config():
+    assert tuple(notify.TEXTS) == NOTIFY_LANGUAGES
+
+
 # Sending
 
 
@@ -100,6 +176,16 @@ def test_send_all_ok(ntfy):
     assert request.headers["Content-Type"] == "text/plain; charset=utf-8"
     assert _body(request) == "✅ Yoga · Mon 2026-01-12 18:00 · booked (3 attempts)"
     assert request.req_kwargs["timeout"] == 10
+
+
+def test_send_encodes_non_ascii_title(ntfy):
+    notify.send(NotifySettings(url=URL, language="fr"), [YOGA])
+
+    [request] = _notifications(ntfy)
+    assert request.headers["Title"].isascii()
+    assert request.headers["Title"].startswith("=?UTF-8?B?")
+    assert _title(request) == "pysportbot: 1/1 réservés"
+    assert _body(request) == "✅ Yoga · lun. 12/01/2026 18:00 · réservé (3 tentatives)"
 
 
 def test_send_mixed(ntfy):
@@ -141,6 +227,13 @@ def test_send_error(settings, ntfy):
     assert request.headers["Tags"] == "warning"
     assert request.headers["Priority"] == "high"
     assert _body(request) == "Login failed: Invalid credentials. Please check your credentials and try again."
+
+
+def test_send_error_title_in_language(ntfy):
+    notify.send(NotifySettings(url=URL, language="es"), error=AuthenticationError("Invalid credentials"))
+
+    [request] = _notifications(ntfy)
+    assert _title(request) == "pysportbot: ejecución fallida"
 
 
 @pytest.mark.parametrize(
@@ -243,6 +336,19 @@ def test_invalid_notify_on(data, env):
     assert "notify_on: invalid value 'never'. Use one of: always, failure." in message
 
 
+def test_notify_language_from_file_and_env():
+    assert parse({"notify_url": URL, "notify_language": "it"}).notify == NotifySettings(url=URL, language="it")
+    config = parse({"notify_url": URL, "notify_language": "it"}, {"SPORTBOT_NOTIFY_LANGUAGE": " DE "})
+    assert config.notify == NotifySettings(url=URL, language="de")
+
+
+@pytest.mark.parametrize("language", ["pt", "german", 1])
+def test_invalid_notify_language(language):
+    message = config_error({"notify_url": URL, "notify_language": language})
+
+    assert f"notify_language: invalid value {language!r}. Use one of: en, de, es, fr, it." in message
+
+
 def test_notify_url_not_in_repr():
     assert "s3cret" not in repr(parse({"notify_url": URL}))
 
@@ -279,6 +385,15 @@ class TestRun:
         err = capsys.readouterr().err
         assert "Notification sent." in err
         assert "s3cret" not in err
+
+    def test_language_from_env(self, mocked_api, notify_url, monkeypatch, config_path):
+        monkeypatch.setenv("SPORTBOT_NOTIFY_LANGUAGE", "de")
+
+        assert _run(config_path) == 0
+
+        [request] = _notifications(mocked_api)
+        assert request.headers["Title"] == "pysportbot: 1/1 gebucht"
+        assert _body(request) == "✅ Gimnasio · Fr 04.01.2030 12:00 · gebucht"
 
     def test_dry_run_title(self, mocked_api, notify_url, config_path):
         assert _run(config_path, "--dry-run") == 0

@@ -131,7 +131,7 @@ def test_unknown_key_without_close_match_lists_valid_keys():
     message = config_error({**VALID, "xyz": 1})
 
     assert (
-        "unknown key 'xyz'. Valid keys are: email, password, centre, booking_execution, classes, notify_url, notify_on."
+        "unknown key 'xyz'. Valid keys are: email, password, centre, booking_execution, classes, notify_url, notify_on, notify_language."
         in message
     )
 

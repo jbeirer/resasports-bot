@@ -7,7 +7,7 @@ import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, cast, get_args
 from urllib.parse import urlsplit
 
 from pysportbot import SportBot
@@ -26,8 +26,16 @@ WEEKDAYS = {
 ENV_VARS = {"email": "SPORTBOT_EMAIL", "password": "SPORTBOT_PASSWORD", "centre": "SPORTBOT_CENTRE"}
 
 # Notification settings that env vars override, keyed by config key
-NOTIFY_ENV_VARS = {"notify_url": "SPORTBOT_NOTIFY_URL", "notify_on": "SPORTBOT_NOTIFY_ON"}
-NOTIFY_ON = ("always", "failure")
+NOTIFY_ENV_VARS = {
+    "notify_url": "SPORTBOT_NOTIFY_URL",
+    "notify_on": "SPORTBOT_NOTIFY_ON",
+    "notify_language": "SPORTBOT_NOTIFY_LANGUAGE",
+}
+NotifyOn = Literal["always", "failure"]
+# English, German, Spanish, French and Italian
+NotifyLanguage = Literal["en", "de", "es", "fr", "it"]
+NOTIFY_ON: tuple[str, ...] = get_args(NotifyOn)
+NOTIFY_LANGUAGES: tuple[str, ...] = get_args(NotifyLanguage)
 
 TOP_LEVEL_KEYS = (*ENV_VARS, "booking_execution", "classes", *NOTIFY_ENV_VARS)
 CLASS_KEYS = ("activity", "class_day", "class_time")
@@ -61,7 +69,8 @@ class NotifySettings:
 
     # The ntfy topic URL works like a password, so keep it out of the repr
     url: str = field(repr=False)
-    on: Literal["always", "failure"] = "always"
+    on: NotifyOn = "always"
+    language: NotifyLanguage = "en"
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,8 +87,8 @@ class ServiceConfig:
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any], env: Mapping[str, str] = os.environ) -> "ServiceConfig":
         """
-        Parse a config mapping, with the SPORTBOT_EMAIL, SPORTBOT_PASSWORD, SPORTBOT_CENTRE, SPORTBOT_NOTIFY_URL and
-        SPORTBOT_NOTIFY_ON env vars overriding the corresponding keys.
+        Parse a config mapping, with the SPORTBOT_EMAIL, SPORTBOT_PASSWORD, SPORTBOT_CENTRE, SPORTBOT_NOTIFY_URL,
+        SPORTBOT_NOTIFY_ON and SPORTBOT_NOTIFY_LANGUAGE env vars overriding the corresponding keys.
 
         Raises:
             ConfigError: Listing every problem found.
@@ -183,16 +192,25 @@ def _notify(data: Mapping[str, Any], env: Mapping[str, str], errors: list[str]) 
     # Empty env vars count as unset, as for the credentials
     url = env.get(NOTIFY_ENV_VARS["notify_url"]) or data.get("notify_url")
     on = env.get(NOTIFY_ENV_VARS["notify_on"]) or data.get("notify_on", "always")
+    language = env.get(NOTIFY_ENV_VARS["notify_language"]) or data.get("notify_language", "en")
+    if isinstance(language, str):
+        language = language.strip().lower()
 
     if on not in NOTIFY_ON:
         errors.append(f"notify_on: invalid value {on!r}. Use one of: {', '.join(NOTIFY_ON)}.")
+    if language not in NOTIFY_LANGUAGES:
+        errors.append(f"notify_language: invalid value {language!r}. Use one of: {', '.join(NOTIFY_LANGUAGES)}.")
     if url is None:
         return None
     # Never echo the URL: an ntfy topic URL works like a password
     if not isinstance(url, str) or not _is_notify_url(url.strip()):
         errors.append("notify_url: must be an https:// URL, or http:// for localhost, e.g. 'https://ntfy.sh/<topic>'.")
         return None
-    return NotifySettings(url=url.strip(), on=cast(Literal["always", "failure"], on))
+    return NotifySettings(
+        url=url.strip(),
+        on=cast(NotifyOn, on),
+        language=cast(NotifyLanguage, language),
+    )
 
 
 def _is_notify_url(url: str) -> bool:

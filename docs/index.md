@@ -161,6 +161,7 @@ The configuration supports these keys:
 | `classes` | non-empty list of classes, each with `activity`, `class_day` (weekday) and `class_time` (time) | yes | |
 | `notify_url` | ntfy topic URL, see [Notifications](#notifications) | no, notifications are off without it | `SPORTBOT_NOTIFY_URL` |
 | `notify_on` | `"always"` or `"failure"` | no, defaults to `"always"` | `SPORTBOT_NOTIFY_ON` |
+| `notify_language` | `"en"`, `"de"`, `"es"`, `"fr"` or `"it"` | no, defaults to `"en"` | `SPORTBOT_NOTIFY_LANGUAGE` |
 
 - **Env vars** override the corresponding keys in the file. Empty env vars are ignored.
 - **Weekdays** are English day names or their 3-letter abbreviations, case-insensitive, e.g. `Monday` or `mon`.
@@ -289,6 +290,7 @@ pysportbot: 1/2 booked
 ```
 
 - **When:** after every run by default. With `notify_on` set to `"failure"`, or `--notify-on failure`, only if a class was not booked or the run failed. A run that fails before booking, e.g. because the login failed, sends the error message.
+- **Language:** English by default. Set `notify_language`, or `SPORTBOT_NOTIFY_LANGUAGE`, to `de` (German), `es` (Spanish), `fr` (French) or `it` (Italian), e.g. for `"de"`: `pysportbot: 1/2 gebucht` and `✅ Yoga · Mo 12.01.2026 18:00 · gebucht (3 Versuche)`. Error messages stay in English.
 - **Testing:** `pysportbot run --config config.json --dry-run` sends the notification too, with the title prefixed by `[dry run]`.
 - **Self-hosted ntfy:** set the URL of the topic on your server instead. It must use `https://`, except for `localhost`.
 - **Failures:** if the notification cannot be sent, the service logs a warning and carries on. The exit code stays the same.

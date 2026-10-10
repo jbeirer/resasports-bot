@@ -384,8 +384,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run the booking service with a config file.",
         description="Run the booking service with a JSON or TOML config file.",
         epilog=(
-            "The SPORTBOT_EMAIL, SPORTBOT_PASSWORD, SPORTBOT_CENTRE, SPORTBOT_NOTIFY_URL and SPORTBOT_NOTIFY_ON env "
-            "vars override the config file."
+            "The SPORTBOT_EMAIL, SPORTBOT_PASSWORD, SPORTBOT_CENTRE, SPORTBOT_NOTIFY_URL, SPORTBOT_NOTIFY_ON and "
+            "SPORTBOT_NOTIFY_LANGUAGE env vars override the config file."
         ),
     )
     run.add_argument("--config", required=True, help="Path to the JSON or TOML configuration file.")
