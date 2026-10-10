@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock, call, patch
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -8,7 +8,7 @@ import responses
 
 from pysportbot.endpoints import Endpoints
 from pysportbot.exceptions import ConfigError
-from pysportbot.service.booking import attempt_booking
+from pysportbot.service.booking import attempt_booking, schedule_bookings
 from pysportbot.service.config_validator import validate_config
 from pysportbot.service.scheduling import calculate_next_execution
 from pysportbot.service.service import run_service
@@ -173,6 +173,34 @@ def test_calculate_next_execution_across_dst_change(now, expected, utc_offset):
     assert result.replace(tzinfo=None) == expected
     assert result.utcoffset() == utc_offset
     assert result == (expected - utc_offset).replace(tzinfo=ZoneInfo("UTC"))
+
+
+@pytest.mark.parametrize(
+    ("now", "hours_until_execution"),
+    [
+        # Saturday 07:30 -> Sunday 07:30 is 23 real hours when clocks go forward, and 25 when they go back
+        pytest.param(datetime(2026, 3, 28, 7, 30), 23, id="spring-forward"),
+        pytest.param(datetime(2026, 10, 24, 7, 30), 25, id="fall-back"),
+    ],
+)
+def test_schedule_bookings_waits_real_time_across_dst_change(mock_time, now, hours_until_execution):
+    madrid = ZoneInfo("Europe/Madrid")
+    start = now.replace(tzinfo=madrid)
+    seconds_until_execution = hours_until_execution * 3600
+    # The clock when the service wakes up to re-authenticate, 60 s before execution
+    reauth_now = datetime.fromtimestamp(start.timestamp() + seconds_until_execution - 60, madrid)
+    config = {**VALID_CONFIG, "booking_execution": "Sunday 07:30:00"}
+
+    with (
+        patch("pysportbot.service.scheduling.datetime", wraps=datetime) as scheduling_datetime,
+        patch("pysportbot.service.booking.datetime", wraps=datetime) as booking_datetime,
+        patch("pysportbot.service.booking.attempt_booking"),
+    ):
+        scheduling_datetime.now.return_value = start
+        booking_datetime.now.side_effect = [start, reauth_now]
+        schedule_bookings(MagicMock(), config, 0, 1, 0, "Europe/Madrid", 1)
+
+    assert mock_time.sleep.call_args_list == [call(seconds_until_execution - 60), call(60)]
 
 
 def test_validate_config_accepts_valid_config():

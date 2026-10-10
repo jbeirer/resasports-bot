@@ -97,8 +97,9 @@ def schedule_bookings(
     # Get the time now
     now = datetime.now(ZoneInfo(time_zone))
 
-    # Calculate the seconds until execution
-    time_until_execution = (execution_time - now).total_seconds()
+    # Calculate the seconds until execution. Subtracting datetimes that share a ZoneInfo gives the wall-clock
+    # difference, which is off by an hour across a DST change, so compare the absolute timestamps instead
+    time_until_execution = execution_time.timestamp() - now.timestamp()
 
     if time_until_execution > 0:
         logger.info(
@@ -127,7 +128,7 @@ def schedule_bookings(
 
         # Wait the remaining time until execution
         now = datetime.now(ZoneInfo(time_zone))
-        remaining_time = (execution_time - now).total_seconds()
+        remaining_time = execution_time.timestamp() - now.timestamp()
         if remaining_time > 0:
             logger.info(f"Waiting {remaining_time:.2f} seconds until booking execution.")
         time.sleep(max(0, remaining_time))
