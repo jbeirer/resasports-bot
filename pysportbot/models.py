@@ -31,10 +31,17 @@ class _Fields:
         return value
 
     def _to_int(self, key: str, value: Any) -> int:
-        try:
+        # Accept only whole numbers: int() would truncate 5001.9 to another slot ID and read True as 1
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        if isinstance(value, float) and value.is_integer():
             return int(value)
-        except (TypeError, ValueError) as err:
-            raise self._error(f"Field '{key}' is not an integer: {value!r}") from err
+        if isinstance(value, str):
+            try:
+                return int(value)
+            except ValueError:
+                pass
+        raise self._error(f"Field '{key}' is not an integer: {value!r}")
 
     def nested(self, key: str) -> "_Fields":
         """The fields of a nested object; a missing one reads as empty."""
@@ -150,7 +157,8 @@ class Slot:
         activity_id: The ID of the activity.
         activity_name: The name of the activity.
         category_id: The ID of the activity's category.
-        start: The start time, time zone aware, in the bot's time zone.
+        start: The start time, time zone aware, in the bot's time zone. The API sends local times without a UTC
+            offset, so a time in the hour skipped or repeated by a DST change gets the offset in effect before it.
         end: The end time, time zone aware, in the bot's time zone.
         capacity: The total number of places.
         inscribed: The number of places already taken.

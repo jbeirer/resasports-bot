@@ -45,7 +45,8 @@ for s in bot.daily_slots("Yoga", "2026-01-05"):
 bot.ensure_logged_in()
 
 # Book an activity slot on a specific day and time, given as a string or a datetime
-# Returns the booked slot, and raises an exception if the booking fails (e.g. not bookable yet, already booked, full)
+# Returns the booked slot as listed before the booking, so `inscribed` does not count your booking yet
+# Raises an exception if the booking fails (e.g. not bookable yet, already booked, full)
 bot.book("Yoga", "2026-01-05 07:00")
 
 # Cancel an activity slot on a specific day and time

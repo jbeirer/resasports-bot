@@ -1,5 +1,5 @@
 import dataclasses
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -166,6 +166,47 @@ def test_slot_missing_required_field_raises(slot_data, field, missing):
 def test_slot_malformed_field_raises(slot_data, field, value):
     with pytest.raises(APIError, match=f"'{field}'"):
         Slot.from_api({**slot_data, field: value}, "Europe/Madrid")
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(5001, 5001), ("5001", 5001), (" 5001 ", 5001), (5001.0, 5001), ("-1", -1)],
+)
+def test_slot_accepts_whole_number_ids(slot_data, value, expected):
+    assert Slot.from_api({**slot_data, "id_activity_calendar": value}, "Europe/Madrid").id == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(5001.9, id="fractional"),
+        pytest.param("5001.0", id="float-string"),
+        pytest.param(True, id="true"),
+        pytest.param(False, id="false"),
+        pytest.param(float("inf"), id="infinity"),
+        pytest.param(float("nan"), id="nan"),
+        pytest.param("", id="empty"),
+        pytest.param({"id": 5001}, id="object"),
+    ],
+)
+def test_slot_rejects_non_integer_ids(slot_data, value):
+    with pytest.raises(APIError, match="'id_activity_calendar' is not an integer"):
+        Slot.from_api({**slot_data, "id_activity_calendar": value}, "Europe/Madrid")
+
+
+def test_slot_time_in_dst_gap_gets_offset_before_change(slot_data):
+    """Madrid skips 02:00-03:00 on 2026-03-29; the API's local time keeps the pre-change offset, +01:00."""
+    slot = Slot.from_api({**slot_data, "start_timestamp": "2026-03-29 02:30:00"}, "Europe/Madrid")
+
+    assert slot.start.utcoffset() == timedelta(hours=1)
+    assert slot.start == datetime(2026, 3, 29, 2, 30, tzinfo=MADRID)
+
+
+def test_slot_time_in_repeated_dst_hour_gets_first_occurrence(slot_data):
+    """Madrid repeats 02:00-03:00 on 2026-10-25; the API's local time is taken as the first one, at +02:00."""
+    slot = Slot.from_api({**slot_data, "start_timestamp": "2026-10-25 02:30:00"}, "Europe/Madrid")
+
+    assert slot.start.utcoffset() == timedelta(hours=2)
 
 
 def test_from_api_rejects_non_object():

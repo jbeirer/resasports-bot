@@ -130,6 +130,19 @@ def test_daily_slots_times_in_configured_time_zone(mocked_api, time_zone):
     assert slots[0].start == datetime(2030, 1, 4, 9, tzinfo=ZoneInfo(time_zone))
 
 
+def test_daily_slots_malformed_entry_of_other_activity_raises(activities, mocked_api, payloads):
+    """The calendar covers the whole category; a malformed entry of another activity fails loudly too."""
+    acts = activities.fetch()
+    calendar = payloads["activities_calendar"]["data"]["activities_calendar"]
+    pilates = next(s for s in calendar if s["name_activity"] == "Pilates")
+    assert pilates["id_category_activity"] == next(a.category_id for a in acts if a.name == "Yoga")
+    del pilates["n_capacity"]
+    mocked_api.replace(responses.POST, str(Endpoints.SLOTS), json=payloads["activities_calendar"])
+
+    with pytest.raises(APIError, match="'n_capacity'"):
+        activities.daily_slots(acts, "Yoga", DAY)
+
+
 def test_daily_slots_malformed_entry_raises(activities, mocked_api, payloads):
     acts = activities.fetch()
     calendar = payloads["activities_calendar"]["data"]["activities_calendar"]
