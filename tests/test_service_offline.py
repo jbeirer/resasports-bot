@@ -1,5 +1,3 @@
-import json
-import sys
 from dataclasses import replace
 from datetime import datetime, time, timedelta
 from unittest.mock import MagicMock, call, patch
@@ -10,7 +8,6 @@ import requests
 import responses
 
 from pysportbot.endpoints import Endpoints
-from pysportbot.service.__main__ import main
 from pysportbot.service.booking import attempt_booking, schedule_bookings
 from pysportbot.service.config import ClassSpec, ServiceConfig, WeeklyTime, load_config
 from pysportbot.service.scheduling import next_execution
@@ -29,41 +26,10 @@ VALID_CONFIG = ServiceConfig(
     execution=WeeklyTime(FRIDAY, time(7, 30)),
     classes=(ClassSpec("Gimnasio", FRIDAY, time(12, 0)),),
 )
-CREDENTIALS_ENV = {
-    "SPORTBOT_EMAIL": "user@example.com",
-    "SPORTBOT_PASSWORD": "password",
-    "SPORTBOT_CENTRE": "test-centre",
-}
-# A Friday one week before the fixture's slots on Friday 2030-01-04
-FROZEN_NOW = datetime(2029, 12, 28, 7, 30, tzinfo=MADRID)
-CONFIG_WITHOUT_CREDENTIALS = {
-    "booking_execution": "now",
-    "classes": [{"activity": "Gimnasio", "class_day": "Friday", "class_time": "12:00"}],
-}
 
 
 def _booking_calls(mocked_api):
     return [c for c in mocked_api.calls if c.request.url == str(Endpoints.BOOKING)]
-
-
-@pytest.fixture
-def frozen_now():
-    with patch("pysportbot.service.booking.datetime", wraps=datetime) as mock_datetime:
-        mock_datetime.now.return_value = FROZEN_NOW
-        yield
-
-
-@pytest.fixture
-def config_path(tmp_path):
-    path = tmp_path / "config.json"
-    path.write_text(json.dumps(CONFIG_WITHOUT_CREDENTIALS))
-    return path
-
-
-@pytest.fixture
-def mock_time():
-    with patch("pysportbot.service.booking.time") as mock:
-        yield mock
 
 
 def _attempt(bot, retry_attempts=3, retry_delay=1):
@@ -240,65 +206,10 @@ def test_schedule_bookings_waits_real_time_across_dst_change(mock_time, now, hou
     assert mock_time.sleep.call_args_list == [call(seconds_until_execution - 60), call(60)]
 
 
-def test_run_service_books_now_with_env_credentials(mocked_api, mock_time, frozen_now, config_path):
-    config = load_config(config_path, env=CREDENTIALS_ENV)
+def test_run_service_books_now_with_env_credentials(mocked_api, mock_time, frozen_now, config_path, credentials_env):
+    config = load_config(config_path, env=credentials_env)
 
     run_service(config, booking_delay=0, retry_attempts=1, retry_delay=0)
 
     assert len(_booking_calls(mocked_api)) == 1
     mock_time.sleep.assert_not_called()
-
-
-def test_cli_books_now_with_env_credentials(mocked_api, mock_time, frozen_now, config_path, monkeypatch):
-    for name, value in CREDENTIALS_ENV.items():
-        monkeypatch.setenv(name, value)
-    monkeypatch.setattr(sys, "argv", ["pysportbot.service", "--config", str(config_path), "--max-threads", "-1"])
-
-    main()
-
-    assert len(_booking_calls(mocked_api)) == 1
-
-
-def test_cli_reports_config_error_without_traceback(mocked_api, tmp_path, monkeypatch, capsys):
-    for name in CREDENTIALS_ENV:
-        monkeypatch.delenv(name, raising=False)
-    path = tmp_path / "config.json"
-    path.write_text(json.dumps({**CONFIG_WITHOUT_CREDENTIALS, "center": "test-centre"}))
-    monkeypatch.setattr(sys, "argv", ["pysportbot.service", "--config", str(path)])
-
-    with pytest.raises(SystemExit) as exc_info:
-        main()
-
-    assert exc_info.value.code == 2
-    err = capsys.readouterr().err
-    assert "unknown key 'center', did you mean 'centre'?" in err
-    assert "SPORTBOT_EMAIL" in err
-    assert "Traceback" not in err
-    assert len(mocked_api.calls) == 0
-
-
-@pytest.mark.parametrize(
-    ("option", "value"),
-    [
-        ("--max-threads", "0"),
-        ("--max-threads", "-2"),
-        ("--max-threads", "two"),
-        ("--retry-attempts", "0"),
-        ("--retry-delay", "-1"),
-        ("--booking-delay", "-1"),
-        ("--booking-delay", "1.5"),
-        ("--time-zone", "Mars/Base"),
-        ("--time-zone", "../etc"),
-        ("--log-level", "LOUD"),
-    ],
-)
-def test_cli_rejects_invalid_arguments(option, value, config_path, monkeypatch, capsys):
-    monkeypatch.setattr(sys, "argv", ["pysportbot.service", "--config", str(config_path), option, value])
-
-    with pytest.raises(SystemExit) as exc_info:
-        main()
-
-    assert exc_info.value.code == 2
-    err = capsys.readouterr().err
-    assert f"argument {option}:" in err
-    assert "Traceback" not in err

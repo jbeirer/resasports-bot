@@ -18,6 +18,40 @@ PySportBot empowers you to programmatically book fitness classes at any sports c
 pip install pysportbot
 ```
 
+## Command line
+
+Installing `pysportbot` also installs the `pysportbot` command, so you can explore your centre and book classes without writing Python:
+
+```bash
+# Find the slug of your centre (no login needed)
+pysportbot centres --search madrid
+
+# Commands that log in read your email and centre from these env vars, or from --email and --centre
+export SPORTBOT_EMAIL="your-email"
+export SPORTBOT_CENTRE="your-centre-slug"
+
+# List the activities of your centre; you are prompted for your password unless SPORTBOT_PASSWORD is set
+pysportbot activities
+
+# List the slots of an activity on a day: YYYY-MM-DD, today, tomorrow or a weekday (its next occurrence, today counts)
+pysportbot slots Yoga monday
+
+# Book or cancel the slot that starts at a given time
+pysportbot book Yoga "2026-01-12 18:00"
+pysportbot cancel Yoga "2026-01-12 18:00"
+
+# Print JSON instead of a table, for scripts
+pysportbot slots Yoga 2026-01-12 --json
+```
+
+With [uv](https://docs.astral.sh/uv/), `uvx pysportbot centres` runs the command without installing anything.
+
+- **Password:** there is no `--password` flag, because it would end up in your shell history and in the process list. The password comes from `SPORTBOT_PASSWORD`, or from a prompt when you run the command in a terminal.
+- **Global options:** `--log-level` [default: `WARNING`, so you only see the result; `INFO` for `run`] and `--time-zone` of the centre [default: `Europe/Madrid`] go before or after the command.
+- **Exit codes:** `0` on success, `1` if the operation fails (e.g. the slot is already booked), `2` for invalid arguments, configuration or missing credentials, and `130` if interrupted. Errors are printed without a traceback; `--log-level DEBUG` adds it.
+
+Run `pysportbot --help` or `pysportbot <command> --help` for all options.
+
 ## Quick Start
 
 ```python
@@ -99,8 +133,10 @@ Colors are used only when stderr is a terminal. Set `NO_COLOR=1` to always disab
 
 You can easily run `pysportbot` as a service to manage your bookings automatically with
 ```bash
-python -m pysportbot.service --config config.json
+pysportbot run --config config.json
 ```
+The older `python -m pysportbot.service --config config.json` still works and takes the same options.
+
 The service reads a JSON or TOML configuration file that specifies how you would like to book your classes. Your credentials don't need to be in the file: set them as environment variables instead.
 
 ```bash
@@ -181,7 +217,7 @@ class_time = "18:00"
 The service also provides various other options that can be inspected with
 
 ```bash
-python -m pysportbot.service --help
+pysportbot run --help
 ```
 Currently supported options include:
 
@@ -191,6 +227,7 @@ Currently supported options include:
 4. `--time-zone`: sets the time zone for the service [default: Europe/Madrid]
 5. `--log-level`: sets the log-level of the service [default: INFO]
 6. `--max-threads`: caps the number of classes booked in parallel, must be a positive integer [default: no cap]
+7. `--dry-run`: does everything, including logging in, waiting until the execution time and finding the slots, but sends no booking requests
 
 If the configuration or an option is invalid, the service prints the problems without a traceback and exits with code 2.
 
@@ -233,7 +270,7 @@ jobs:
           # GitHub Actions renders colored logs, but its output is not a terminal
           FORCE_COLOR: "1"
         run: |
-          uvx --from pysportbot python -m pysportbot.service --config config.json --log-level INFO --booking-delay 1 --retry-attempts 3 --retry-delay 5
+          uvx pysportbot run --config config.json --booking-delay 1 --retry-attempts 3 --retry-delay 5
 ```
 **Note:** Make sure the workflow starts early enough — before your booking execution time (e.g., 07:30 Madrid time) — to allow for potential delays in job startup or execution.
 
