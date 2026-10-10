@@ -224,7 +224,7 @@ class SportBot:
         slot = next((s for s in slots if s.start == when), None)
         if slot is None:
             error = SlotNotFoundError(activity, when.strftime(TIMESTAMP_FORMAT))
-            logger.error(str(error))
+            logger.debug(str(error))
             raise error
         return slot
 
@@ -256,7 +256,7 @@ class SportBot:
 
         # The slot was just fetched, so its counts are fresh enough to skip a booking request that cannot succeed
         if slot.is_full:
-            logger.error(f"Activity '{activity}' on {when} with ID {slot.id} is booked out...")
+            logger.debug(f"Activity '{activity}' on {when} with ID {slot.id} is booked out...")
             raise SlotFullError(str(slot.id))
 
         return self.book_slot(slot)
@@ -290,7 +290,8 @@ class SportBot:
         try:
             self._bookings_manager.book(str(slot.id))
         except SportBotError:
-            logger.error(f"Failed to book class '{slot.activity_name}' on {when}")
+            # The exception reports the failure; the booking service may try many times before the window opens
+            logger.debug(f"Failed to book class '{slot.activity_name}' on {when}")
             raise
         logger.info(f"Successfully booked class '{slot.activity_name}' on {when}")
         return slot
