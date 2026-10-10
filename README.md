@@ -118,18 +118,17 @@ While you can use PySportBot as a continuously running service, doing so often b
 
 Using **[GitHub Actions](https://docs.github.com/en/actions)** is one of the most reliable ways to schedule **automated weekly bookings**. With a simple workflow file, you can ensure your bookings run at a specific time each week — no manual intervention required.
 
-For example, if you have a **Yoga** class on **Monday at 18:00:00**, and you want the **booking** to be executed on **Friday at 07:30:00**, you can automate the process by configuring a **[GitHub Actions workflow](https://docs.github.com/en/actions/writing-workflows)**. Below is a sample workflow file that triggers every **Friday at 06:00 UTC (07:00 CET)**, ensuring there is enough time before the actual booking execution at 07:30:00:
+For example, if you have a **Yoga** class on **Monday at 18:00:00**, and you want the **booking** to be executed on **Friday at 07:30:00**, you can automate the process by configuring a **[GitHub Actions workflow](https://docs.github.com/en/actions/writing-workflows)**. Below is a sample workflow file that triggers every **Friday at 07:00 Madrid time**, ensuring there is enough time before the actual booking execution at 07:30:00:
 
 ```yml
 name: Weekly Booking
 
 on:
-  # Runs at 05:00 UTC (07:00 Madrid time during daylight saving time) on Fridays
-  # Note: Update to '0 6 * * 5' for winter (standard) time when Madrid shifts to UTC+1
-  # GitHub Actions cron expressions are always in UTC and do not support time zones
-  # Reference: https://github.com/orgs/community/discussions/13454
+  # Runs at 07:00 Madrid time on Fridays, all year round
+  # The timezone key accepts any IANA time zone and handles daylight saving time automatically
   schedule:
-    - cron: '0 5 * * 5'
+    - cron: '0 7 * * 5'
+      timezone: 'Europe/Madrid'
 
 jobs:
   book:
@@ -137,7 +136,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v7
@@ -168,7 +167,7 @@ jobs:
         run: |
           python -m pysportbot.service --config config.json --log-level INFO --booking-delay 1 --retry-attempts 3 --retry-delay 5
 ```
-**Note:** Make sure the workflow starts early enough — before your booking execution time (e.g., 07:30 CET) — to allow for potential delays in job startup or execution.
+**Note:** Make sure the workflow starts early enough — before your booking execution time (e.g., 07:30 Madrid time) — to allow for potential delays in job startup or execution.
 
 
 ## LICENSE
