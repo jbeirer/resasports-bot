@@ -1,0 +1,3 @@
+# SportBot
+
+::: pysportbot.SportBot

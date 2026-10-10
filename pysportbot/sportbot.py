@@ -68,6 +68,9 @@ class SportBot:
         """
         Change the level of pysportbot's logs.
 
+        Args:
+            level: The new level, e.g. "DEBUG".
+
         Raises:
             ValueError: If the level name is unknown.
         """
@@ -163,7 +166,7 @@ class SportBot:
             raise
 
     def is_logged_in(self) -> bool:
-        """Returns the login status."""
+        """Whether the bot is logged in."""
         return self._is_logged_in
 
     def _require_activities(self) -> list[Activity]:

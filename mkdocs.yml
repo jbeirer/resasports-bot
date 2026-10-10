@@ -1,7 +1,7 @@
 site_name: pysportbot
 repo_url: https://github.com/jbeirer/resasports-bot
 site_url: https://jbeirer.github.io/resasports-bot/
-site_description: A python-based bot for automatic resasports slot booking.
+site_description: Book fitness classes at sports centres that use Resasports, from the command line or Python.
 site_author: Joshua Falco Beirer
 edit_uri: edit/main/docs/
 repo_name: jbeirer/resasports-bot
@@ -9,17 +9,43 @@ copyright: Maintained by Joshua Falco Beirer.
 
 nav:
   - Home: index.md
-  - Modules: modules.md
+  - User guide:
+      - Command line: guide/cli.md
+      - Python library: guide/python.md
+      - Booking service: guide/service.md
+      - Notifications: guide/notifications.md
+      - GitHub Actions: guide/github-actions.md
+  - API reference:
+      - SportBot: reference/sportbot.md
+      - Models: reference/models.md
+      - Exceptions: reference/exceptions.md
+
 plugins:
   - search
   - mkdocstrings:
       handlers:
         python:
-          paths: [.]  # actually not needed, default
+          options:
+            docstring_style: google
+            show_source: false
+            members_order: source
+            show_signature_annotations: true
+            separate_signature: true
+            show_root_heading: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            heading_level: 2
+            filters: ["!^_"]
+
 theme:
   name: material
-  feature:
-    tabs: true
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - content.tabs.link
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -48,5 +74,15 @@ extra:
 markdown_extensions:
   - toc:
       permalink: true
-  - pymdownx.arithmatex:
-      generic: true
+  - admonition
+  - attr_list
+  - tables
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      check_paths: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true

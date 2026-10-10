@@ -117,6 +117,8 @@ development. Please note this documentation assumes you already have
 
         make test-live
 
+   Note that the live tests book a real class at your centre and then cancel it again.
+
 | 8. Optionally, run the tests against a specific Python version supported by the package:
 
    .. code-block:: bash
@@ -131,8 +133,11 @@ development. Please note this documentation assumes you already have
    .. code-block:: bash
 
         git add .
-        git commit -m "Your detailed description of your changes."
+        git commit -m "fix: describe your change in one line"
         git push origin name-of-your-bugfix-or-feature
+
+   Commit messages follow `Conventional Commits <https://www.conventionalcommits.org/>`_
+   and are a single line, e.g. ``feat: ...``, ``fix: ...`` or ``docs: ...``.
 
 | 10. Submit a pull request through the GitHub website.
 
@@ -144,5 +149,6 @@ Before you submit a pull request, check that it meets these guidelines:
 1. The pull request should include tests.
 
 2. If the pull request adds functionality, the docs should be updated. Put your
-   new functionality into a function with a docstring, and add the feature to
-   the list in README.rst.
+   new functionality into a function with a docstring, and describe it in the
+   matching page under ``docs/``. Preview the docs with ``make docs``, and check
+   that they build without warnings with ``make docs-test``.
