@@ -34,16 +34,12 @@ def attempt_booking(
         start (datetime): Timezone-aware start time of the class.
         retry_attempts (int): Number of retry attempts.
         retry_delay (int): Delay between retries.
-        dry_run (bool): Find the slot, but send no booking request.
+        dry_run (bool): Find the slot and check that it is open, but send no booking request.
     """
     for attempt_num in range(1, retry_attempts + 1):
         try:
             if dry_run:
-                slot = bot.find_slot(activity=activity, start=start)
-                logger.info(
-                    f"DRY RUN: would book {_describe(activity, start)} "
-                    f"(slot {slot.id}, {slot.inscribed}/{slot.capacity} places taken)."
-                )
+                _dry_run_booking(bot, activity, start)
             else:
                 bot.book(activity=activity, start=start)
 
@@ -65,6 +61,26 @@ def attempt_booking(
     # If all attempts fail, log an error
     # Do not raise an exception to allow other bookings to proceed
     logger.error(f"Failed to book {_describe(activity, start)} after {retry_attempts} attempts.")
+
+
+def _dry_run_booking(bot: SportBot, activity: str, start: datetime) -> None:
+    """
+    Check that the slot exists and is open, and log what booking would do, without sending a booking request.
+
+    Raises:
+        SlotFullError: If the slot has no places left, as `SportBot.book()` would.
+        SportBotError: If the slot cannot be found, see `SportBot.find_slot()`.
+    """
+    slot = bot.find_slot(activity=activity, start=start)
+    if slot.cancelled:
+        logger.warning(f"DRY RUN: {_describe(activity, start)} is cancelled, so booking it would fail.")
+    elif slot.is_full:
+        raise SlotFullError(str(slot.id))
+    else:
+        logger.info(
+            f"DRY RUN: would book {_describe(activity, start)} "
+            f"(slot {slot.id}, {slot.inscribed}/{slot.capacity} places taken)."
+        )
 
 
 def _describe(activity: str, start: datetime) -> str:
