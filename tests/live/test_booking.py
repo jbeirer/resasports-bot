@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from pysportbot.utils.errors import ErrorMessages
+from pysportbot import SlotAlreadyBookedError, SlotFullError, SlotNotBookableYetError, SlotUnavailableError
 
 
 def test_book_and_cancel_activity(bot):
@@ -27,16 +27,9 @@ def test_book_and_cancel_activity(bot):
             bot.book("Gimnasio", slot["start_timestamp"])
             booked_slot = slot["start_timestamp"]
             break
-        except ValueError as e:
-            # If the slot is already booked, unavailable, or not yet open, move on
-            if str(e) in [
-                ErrorMessages.slot_already_booked(),
-                ErrorMessages.slot_unavailable(),
-                ErrorMessages.slot_not_bookable_yet(),
-                ErrorMessages.slot_capacity_full(),
-            ]:
-                continue
-            raise
+        except (SlotAlreadyBookedError, SlotUnavailableError, SlotNotBookableYetError, SlotFullError):
+            # If the slot is already booked, unavailable, not yet open, or full, move on
+            continue
 
     assert booked_slot is not None, f"No bookable Gimnasio slots found on {friday_str}"
 

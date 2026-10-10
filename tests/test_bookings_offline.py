@@ -1,4 +1,3 @@
-import re
 from unittest.mock import patch
 from urllib.parse import parse_qs
 
@@ -8,8 +7,15 @@ import responses
 from pysportbot.authenticator import Authenticator
 from pysportbot.bookings import Bookings
 from pysportbot.endpoints import Endpoints
+from pysportbot.exceptions import (
+    APIError,
+    BookingError,
+    CancellationError,
+    SlotAlreadyBookedError,
+    SlotNotBookableYetError,
+    SlotUnavailableError,
+)
 from pysportbot.session import Session
-from pysportbot.utils.errors import ErrorMessages
 
 SLOT_ID = "5001"
 
@@ -42,32 +48,40 @@ def test_book_sends_user_and_slot(bookings, mocked_api, payloads):
 
 
 @pytest.mark.parametrize(
-    ("error_code", "message"),
+    ("error_code", "error_class"),
     [
-        (5, ErrorMessages.slot_already_booked()),
-        (6, ErrorMessages.slot_unavailable()),
-        (28, ErrorMessages.slot_not_bookable_yet()),
+        (5, SlotAlreadyBookedError),
+        (6, SlotUnavailableError),
+        (28, SlotNotBookableYetError),
     ],
 )
-def test_book_known_error_raises_value_error(bookings, mocked_api, error_code, message):
+def test_book_known_error_raises_specific_error(bookings, mocked_api, error_code, error_class):
     mocked_api.replace(responses.POST, str(Endpoints.BOOKING), json={"success": False, "error": error_code})
 
-    with pytest.raises(ValueError, match=re.escape(message)):
+    with pytest.raises(error_class) as exc_info:
         bookings.book(SLOT_ID)
 
+    assert exc_info.value.slot_id == SLOT_ID
+    assert exc_info.value.code == error_code
 
-def test_book_unknown_error_raises_runtime_error(bookings, mocked_api):
-    mocked_api.replace(responses.POST, str(Endpoints.BOOKING), json={"success": False, "error": 99})
 
-    with pytest.raises(RuntimeError, match=re.escape(ErrorMessages.unknown_error("booking"))):
+@pytest.mark.parametrize(
+    ("body", "expected_code"),
+    [
+        pytest.param({"success": False, "error": 99}, 99, id="unknown-code"),
+        pytest.param({"success": False}, None, id="missing-code"),
+        pytest.param({"success": False, "error": "5"}, None, id="non-int-code"),
+    ],
+)
+def test_book_other_error_raises_booking_error(bookings, mocked_api, body, expected_code):
+    mocked_api.replace(responses.POST, str(Endpoints.BOOKING), json=body)
+
+    with pytest.raises(BookingError) as exc_info:
         bookings.book(SLOT_ID)
 
-
-def test_book_failure_without_error_code_raises_runtime_error(bookings, mocked_api):
-    mocked_api.replace(responses.POST, str(Endpoints.BOOKING), json={"success": False})
-
-    with pytest.raises(RuntimeError, match=re.escape(ErrorMessages.unknown_error("booking"))):
-        bookings.book(SLOT_ID)
+    assert type(exc_info.value) is BookingError
+    assert exc_info.value.slot_id == SLOT_ID
+    assert exc_info.value.code == expected_code
 
 
 def test_cancel_success(bookings, mocked_api):
@@ -79,8 +93,10 @@ def test_cancel_success(bookings, mocked_api):
 def test_cancel_failure_raises(bookings, mocked_api):
     mocked_api.replace(responses.POST, str(Endpoints.CANCELLATION), json={"success": False})
 
-    with pytest.raises(ValueError, match=re.escape(ErrorMessages.cancellation_failed())):
+    with pytest.raises(CancellationError) as exc_info:
         bookings.cancel(SLOT_ID)
+
+    assert exc_info.value.slot_id == SLOT_ID
 
 
 @pytest.mark.parametrize("method", ["book", "cancel"])
@@ -92,10 +108,10 @@ def test_requests_use_authenticator_timeout(bookings, method):
 
 
 @pytest.mark.parametrize(
-    ("method", "endpoint", "action"),
+    ("method", "endpoint"),
     [
-        pytest.param("book", Endpoints.BOOKING, "booking", id="book"),
-        pytest.param("cancel", Endpoints.CANCELLATION, "cancellation", id="cancel"),
+        pytest.param("book", Endpoints.BOOKING, id="book"),
+        pytest.param("cancel", Endpoints.CANCELLATION, id="cancel"),
     ],
 )
 @pytest.mark.parametrize(
@@ -109,8 +125,11 @@ def test_requests_use_authenticator_timeout(bookings, method):
         pytest.param({"json": [{"success": True}]}, id="non-object"),
     ],
 )
-def test_bad_response_raises_runtime_error(bookings, mocked_api, method, endpoint, action, response_kwargs):
+def test_bad_response_raises_api_error(bookings, mocked_api, method, endpoint, response_kwargs):
     mocked_api.replace(responses.POST, str(endpoint), **response_kwargs)
 
-    with pytest.raises(RuntimeError, match=re.escape(ErrorMessages.unknown_error(action))):
+    with pytest.raises(APIError) as exc_info:
         getattr(bookings, method)(SLOT_ID)
+
+    assert exc_info.value.endpoint == str(endpoint)
+    assert exc_info.value.status_code == response_kwargs.get("status", 200)

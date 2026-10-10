@@ -1,5 +1,4 @@
 import json
-import re
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -8,8 +7,8 @@ import responses
 
 from pysportbot.authenticator import Authenticator
 from pysportbot.endpoints import Endpoints
+from pysportbot.exceptions import AuthenticationError
 from pysportbot.session import Session
-from pysportbot.utils.errors import ErrorMessages
 
 
 @pytest.fixture
@@ -80,11 +79,42 @@ def test_sport_user_token_request_uses_resasocial_bearer(auth, mocked_api, paylo
 def test_login_failure_raises(auth, mocked_api, payloads, method, endpoint, make_response):
     mocked_api.replace(method, str(endpoint), **make_response(payloads))
 
-    with pytest.raises(ValueError, match=re.escape(ErrorMessages.failed_login())):
+    with pytest.raises(AuthenticationError):
         auth.login("user@example.com", "password")
 
     assert auth.authenticated is False
     assert auth.user_id is None
+
+
+@pytest.mark.parametrize(
+    ("make_response", "reason"),
+    [
+        pytest.param(lambda p: {"status": 401}, "login returned HTTP 401", id="non-200"),
+        pytest.param(
+            lambda p: {"json": {**p["user_login"], "applications": []}},
+            "no applications in login response",
+            id="empty-applications",
+        ),
+    ],
+)
+def test_login_failure_reason_is_specific(auth, mocked_api, payloads, make_response, reason):
+    mocked_api.replace(responses.POST, str(Endpoints.USER_LOGIN), **make_response(payloads))
+
+    with pytest.raises(AuthenticationError) as exc_info:
+        auth.login("user@example.com", "password")
+
+    assert exc_info.value.reason == reason
+
+
+def test_login_wraps_unexpected_error(auth, mocked_api):
+    error = requests.ConnectionError("connection refused")
+    mocked_api.replace(responses.POST, str(Endpoints.USER_LOGIN), body=error)
+
+    with pytest.raises(AuthenticationError) as exc_info:
+        auth.login("user@example.com", "password")
+
+    assert exc_info.value.__cause__ is error
+    assert auth.authenticated is False
 
 
 def test_session_invalid_before_login(auth, mocked_api):

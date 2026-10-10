@@ -1,7 +1,6 @@
 # test_centres.py
 
 import logging  # Import logging to set log levels
-import re
 from unittest.mock import patch
 
 import pandas as pd
@@ -11,7 +10,7 @@ import responses
 from pysportbot import SportBot
 from pysportbot.centres import Centres
 from pysportbot.endpoints import Endpoints
-from pysportbot.utils.errors import ErrorMessages
+from pysportbot.exceptions import APIError, CentreNotFoundError
 
 
 @pytest.mark.parametrize(
@@ -126,8 +125,10 @@ def test_check_centre_unknown_raises(mocked_api):
     """`check_centre` rejects a slug that is not in the fetched centre list."""
     centres = Centres()
 
-    with pytest.raises(ValueError, match=re.escape(ErrorMessages.centre_not_found("unknown"))):
+    with pytest.raises(CentreNotFoundError) as exc_info:
         centres.check_centre("unknown")
+
+    assert exc_info.value.centre == "unknown"
 
 
 def test_check_centre_valid_slug_passes(mocked_api, centre_slug):
@@ -146,9 +147,12 @@ def test_check_centre_valid_slug_passes(mocked_api, centre_slug):
         pytest.param({"json": {"applications": []}}, id="empty"),
     ],
 )
-def test_fetch_centres_failure_raises_runtime_error(mocked_api, response_kwargs):
-    """A failed centre fetch raises a clear RuntimeError instead of `KeyError: 'slug'`."""
+def test_fetch_centres_failure_raises_api_error(mocked_api, response_kwargs):
+    """A failed centre fetch raises a clear APIError instead of `KeyError: 'slug'`."""
     mocked_api.replace(responses.POST, str(Endpoints.CENTRE), **response_kwargs)
 
-    with pytest.raises(RuntimeError, match=re.escape(ErrorMessages.failed_fetch("centres"))):
+    with pytest.raises(APIError) as exc_info:
         SportBot()
+
+    assert exc_info.value.endpoint == str(Endpoints.CENTRE)
+    assert exc_info.value.status_code == response_kwargs.get("status", 200)

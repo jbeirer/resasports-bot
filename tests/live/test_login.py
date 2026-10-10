@@ -3,8 +3,7 @@
 
 import pytest
 
-from pysportbot import SportBot
-from pysportbot.utils.errors import ErrorMessages
+from pysportbot import AuthenticationError, CentreNotFoundError, SportBot
 
 
 def test_bot_login_success(bot):
@@ -16,20 +15,20 @@ def test_bot_login_success(bot):
 
 def test_login_with_invalid_centre_raises_error():
     """
-    Test that logging in with an invalid centre raises a ValueError with the correct message.
+    Test that logging in with an invalid centre raises a CentreNotFoundError.
     """
     invalid_centre = "nonexistent-centre"
     bot = SportBot()
 
-    with pytest.raises(ValueError, match=ErrorMessages.centre_not_found(invalid_centre)):
+    with pytest.raises(CentreNotFoundError):
         bot.login("test@example.com", "somepassword", invalid_centre)
 
 
 def test_login_with_invalid_credentials_raises_error():
     """
-    Test that logging in with invalid credentials raises an Exception with the correct message.
+    Test that logging in with invalid credentials raises an AuthenticationError.
     """
     bot = SportBot()
 
-    with pytest.raises(Exception, match=ErrorMessages.login_failed()):
+    with pytest.raises(AuthenticationError):
         bot.login("invalid_email@example.com", "wrong_password", "kirolklub")

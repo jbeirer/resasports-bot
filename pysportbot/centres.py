@@ -7,7 +7,7 @@ from pandas import DataFrame
 from pysportbot.utils.logger import get_logger
 
 from .endpoints import Endpoints
-from .utils.errors import ErrorMessages
+from .exceptions import APIError, CentreNotFoundError
 
 logger = get_logger(__name__)
 
@@ -40,19 +40,24 @@ class Centres:
     def check_centre(self, centre: str) -> None:
         """
         Set the user selected centre.
+
+        Raises:
+            CentreNotFoundError: If the centre is not in the list of available centres.
         """
         if centre not in self.centre_list:
-            logger.error(ErrorMessages.centre_not_found(centre))
+            error = CentreNotFoundError(centre)
+            logger.error(str(error))
             self.print_centres()
-            raise ValueError(ErrorMessages.centre_not_found(centre))
+            raise error
 
     def fetch_centres(self) -> DataFrame:
         """
         Fetches the info of available centres from Resasports and returns a DataFrame.
 
         Raises:
-            RuntimeError: If the centres cannot be fetched or the response is malformed or empty.
+            APIError: If the centres cannot be fetched or the response is malformed or empty.
         """
+        response = None
         try:
             response = requests.post(
                 Endpoints.CENTRE,
@@ -66,12 +71,22 @@ class Centres:
             df = df[["slug", "name", "address.town", "address.country", "address.street_line"]]
             df.columns = ["slug", "name", "town", "country", "address"]
         except Exception as exc:
-            logger.exception(ErrorMessages.failed_fetch("centres"))
-            raise RuntimeError(ErrorMessages.failed_fetch("centres")) from exc
+            logger.exception("Failed to fetch centres.")
+            raise APIError(
+                "Failed to fetch centres",
+                endpoint=Endpoints.CENTRE,
+                status_code=response.status_code if response is not None else None,
+                body=response.text if response is not None else "",
+            ) from exc
 
         if df.empty:
-            logger.error(ErrorMessages.failed_fetch("centres"))
-            raise RuntimeError(ErrorMessages.failed_fetch("centres"))
+            logger.error("Failed to fetch centres: the response contains no centres.")
+            raise APIError(
+                "Failed to fetch centres: the response contains no centres",
+                endpoint=Endpoints.CENTRE,
+                status_code=response.status_code,
+                body=response.text,
+            )
 
         return df
 

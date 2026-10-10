@@ -4,10 +4,24 @@ from requests import Response
 
 from .authenticator import Authenticator
 from .endpoints import Endpoints
-from .utils.errors import ErrorMessages
+from .exceptions import (
+    APIError,
+    BookingError,
+    CancellationError,
+    SlotAlreadyBookedError,
+    SlotNotBookableYetError,
+    SlotUnavailableError,
+)
 from .utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Booking API error codes with a dedicated exception; any other code raises a plain BookingError
+_ERROR_CODES: dict[int, type[BookingError]] = {
+    5: SlotAlreadyBookedError,
+    6: SlotUnavailableError,
+    28: SlotNotBookableYetError,
+}
 
 
 class Bookings:
@@ -37,25 +51,40 @@ class Bookings:
             dict: The parsed JSON body, guaranteed to contain a "success" key.
 
         Raises:
-            RuntimeError: If the status is not 200 or the body is not a JSON object with a boolean "success".
+            APIError: If the status is not 200 or the body is not a JSON object with a boolean "success".
         """
         if response.status_code != 200:
             logger.error(
                 f"{action.capitalize()} request failed with status {response.status_code}: {response.text[:200]}"
             )
-            raise RuntimeError(ErrorMessages.unknown_error(action))
+            raise APIError(
+                f"{action.capitalize()} request failed",
+                endpoint=response.url,
+                status_code=response.status_code,
+                body=response.text,
+            )
 
         try:
             response_json: dict[str, Any] = response.json()
         except ValueError as err:
             logger.error(f"Invalid JSON in {action} response: {response.text[:200]}")
-            raise RuntimeError(ErrorMessages.unknown_error(action)) from err
+            raise APIError(
+                f"Invalid JSON in {action} response",
+                endpoint=response.url,
+                status_code=response.status_code,
+                body=response.text,
+            ) from err
 
         success = response_json.get("success") if isinstance(response_json, dict) else None
         # Require a real boolean: a string like "false" would otherwise be truthy
         if success is not True and success is not False:
             logger.error(f"Unexpected {action} response: {response.text[:200]}")
-            raise RuntimeError(ErrorMessages.unknown_error(action))
+            raise APIError(
+                f"Unexpected {action} response",
+                endpoint=response.url,
+                status_code=response.status_code,
+                body=response.text,
+            )
 
         return response_json
 
@@ -67,8 +96,11 @@ class Bookings:
             slot_id (str): The unique ID of the activity slot.
 
         Raises:
-            ValueError: If the slot is already booked or unavailable.
-            RuntimeError: If an unknown error occurs during booking.
+            SlotAlreadyBookedError: If the slot is already booked.
+            SlotUnavailableError: If the slot is not available.
+            SlotNotBookableYetError: If the slot is not bookable yet.
+            BookingError: If the booking fails with any other or no error code.
+            APIError: If the response is not a valid booking response.
         """
         logger.debug(f"Attempting to book slot {slot_id}...")
 
@@ -84,19 +116,15 @@ class Bookings:
         else:
             # Handle error cases
             error_code = response_json.get("error")
+            code = error_code if isinstance(error_code, int) else None
+            error_class = _ERROR_CODES.get(code, BookingError) if code is not None else BookingError
 
-            if error_code == 5:
-                logger.warning(f"Slot {slot_id} is already booked.")
-                raise ValueError(ErrorMessages.slot_already_booked())
-            elif error_code == 6:
-                logger.warning(f"Slot {slot_id} is not available.")
-                raise ValueError(ErrorMessages.slot_unavailable())
-            elif error_code == 28:
-                logger.warning(f"Slot {slot_id} is not bookable yet.")
-                raise ValueError(ErrorMessages.slot_not_bookable_yet())
-            else:
+            error = error_class(slot_id, code)
+            if error_class is BookingError:
                 logger.error(f"Booking failed with error code: {error_code}. Response: {response.text[:200]}")
-                raise RuntimeError(ErrorMessages.unknown_error("booking"))
+            else:
+                logger.warning(str(error))
+            raise error
 
     def cancel(self, slot_id: str) -> None:
         """
@@ -106,8 +134,8 @@ class Bookings:
             slot_id (str): The unique ID of the activity slot.
 
         Raises:
-            ValueError: If the cancellation fails.
-            RuntimeError: If the response is not a valid cancellation response.
+            CancellationError: If the cancellation fails.
+            APIError: If the response is not a valid cancellation response.
         """
         logger.debug(f"Attempting to cancel slot {slot_id}...")
 
@@ -123,4 +151,4 @@ class Bookings:
             logger.debug(f"Successfully cancelled slot {slot_id}.")
         else:
             logger.warning(f"Slot {slot_id} was not booked.")
-            raise ValueError(ErrorMessages.cancellation_failed())
+            raise CancellationError(slot_id)

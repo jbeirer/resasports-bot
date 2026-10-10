@@ -1,12 +1,20 @@
-import re
 from urllib.parse import parse_qs
 
 import pytest
 import responses
 
-from pysportbot import SportBot
+from pysportbot import (
+    AuthenticationError,
+    CancellationError,
+    NotLoggedInError,
+    SlotAlreadyBookedError,
+    SlotFullError,
+    SlotNotBookableYetError,
+    SlotNotFoundError,
+    SlotUnavailableError,
+    SportBot,
+)
 from pysportbot.endpoints import Endpoints
-from pysportbot.utils.errors import ErrorMessages
 
 DAY = "2030-01-04"
 FULL_SLOT = f"{DAY} 10:00:00"  # Gimnasio, n_inscribed == n_capacity
@@ -29,12 +37,15 @@ def test_daily_slots(offline_bot):
 
 
 def test_book_unknown_time_raises(offline_bot):
-    with pytest.raises(IndexError):
+    with pytest.raises(SlotNotFoundError) as exc_info:
         offline_bot.book("Gimnasio", f"{DAY} 23:00:00")
+
+    assert exc_info.value.activity == "Gimnasio"
+    assert exc_info.value.start == f"{DAY} 23:00:00"
 
 
 def test_book_full_slot_raises_without_request(offline_bot, mocked_api):
-    with pytest.raises(ValueError, match=re.escape(ErrorMessages.slot_capacity_full())):
+    with pytest.raises(SlotFullError):
         offline_bot.book("Gimnasio", FULL_SLOT)
 
     assert _calls_to(mocked_api, Endpoints.BOOKING) == []
@@ -49,24 +60,27 @@ def test_book_success_sends_one_request(offline_bot, mocked_api):
 
 
 @pytest.mark.parametrize(
-    ("error_code", "message"),
+    ("error_code", "error_class"),
     [
-        (5, ErrorMessages.slot_already_booked()),
-        (6, ErrorMessages.slot_unavailable()),
-        (28, ErrorMessages.slot_not_bookable_yet()),
+        (5, SlotAlreadyBookedError),
+        (6, SlotUnavailableError),
+        (28, SlotNotBookableYetError),
     ],
 )
-def test_book_propagates_api_error(offline_bot, mocked_api, error_code, message):
+def test_book_propagates_api_error(offline_bot, mocked_api, error_code, error_class):
     mocked_api.replace(responses.POST, str(Endpoints.BOOKING), json={"success": False, "error": error_code})
 
-    with pytest.raises(ValueError, match=re.escape(message)):
+    with pytest.raises(error_class) as exc_info:
         offline_bot.book("Gimnasio", OPEN_SLOT)
+
+    assert str(exc_info.value.slot_id) == OPEN_SLOT_ID
+    assert exc_info.value.code == error_code
 
 
 def test_cancel_propagates_api_error(offline_bot, mocked_api):
     mocked_api.replace(responses.POST, str(Endpoints.CANCELLATION), json={"success": False})
 
-    with pytest.raises(ValueError, match=re.escape(ErrorMessages.cancellation_failed())):
+    with pytest.raises(CancellationError):
         offline_bot.cancel("Gimnasio", OPEN_SLOT)
 
 
@@ -79,19 +93,37 @@ def test_cancel_success_sends_one_request(offline_bot, mocked_api):
 
 
 def test_cancel_unknown_time_raises(offline_bot):
-    with pytest.raises(IndexError):
+    with pytest.raises(SlotNotFoundError):
         offline_bot.cancel("Gimnasio", f"{DAY} 23:00:00")
+
+
+@pytest.mark.parametrize("method", ["book", "cancel"])
+def test_empty_calendar_raises_slot_not_found(offline_bot, mocked_api, method):
+    mocked_api.replace(responses.POST, str(Endpoints.SLOTS), json={"data": {"activities_calendar": []}})
+
+    with pytest.raises(SlotNotFoundError):
+        getattr(offline_bot, method)("Gimnasio", OPEN_SLOT)
+
+
+def test_failed_relogin_clears_activities(offline_bot, mocked_api, centre_slug):
+    mocked_api.replace(responses.POST, str(Endpoints.USER_LOGIN), status=401)
+
+    with pytest.raises(AuthenticationError):
+        offline_bot.login("user@example.com", "wrong-password", centre_slug)
+
+    with pytest.raises(NotLoggedInError):
+        offline_bot.activities()
 
 
 def test_login_failure_resets_state(mocked_api, centre_slug):
     mocked_api.replace(responses.POST, str(Endpoints.USER_LOGIN), status=401)
     bot = SportBot()
 
-    with pytest.raises(ValueError, match=re.escape(ErrorMessages.failed_login())):
+    with pytest.raises(AuthenticationError):
         bot.login("user@example.com", "wrong-password", centre_slug)
 
     assert bot.is_logged_in() is False
-    with pytest.raises(PermissionError):
+    with pytest.raises(NotLoggedInError):
         _ = bot.bookings_manager
 
 
@@ -99,7 +131,7 @@ def test_login_failure_resets_state(mocked_api, centre_slug):
 def test_manager_requires_login(mocked_api, manager):
     bot = SportBot()
 
-    with pytest.raises(PermissionError, match=re.escape(ErrorMessages.not_logged_in())):
+    with pytest.raises(NotLoggedInError):
         getattr(bot, manager)
 
 
@@ -115,5 +147,5 @@ def test_manager_requires_login(mocked_api, manager):
 def test_requires_activities_loaded(mocked_api, call):
     bot = SportBot()
 
-    with pytest.raises(ValueError, match=re.escape(ErrorMessages.no_activities_loaded())):
+    with pytest.raises(NotLoggedInError):
         call(bot)
