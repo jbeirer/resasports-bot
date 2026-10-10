@@ -2,12 +2,13 @@ from datetime import datetime
 from typing import Any
 
 from pysportbot import SportBot
-from pysportbot.utils.errors import ErrorMessages
+from pysportbot.exceptions import ConfigError
 from pysportbot.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 DAY_MAP = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
+VALID_DAYS = "Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday"
 
 
 def validate_config(config: dict[str, Any]) -> None:
@@ -18,17 +19,17 @@ def validate_config(config: dict[str, Any]) -> None:
         config (Dict[str, Any]): Configuration dictionary.
 
     Raises:
-        ValueError: If the configuration is invalid.
+        ConfigError: If the configuration is invalid.
     """
 
     def raise_invalid_booking_format_error() -> None:
         """Helper function to raise an error for invalid booking_execution format."""
-        raise ValueError(ErrorMessages.invalid_booking_execution_format())
+        raise ConfigError("Invalid booking_execution format. Use 'now' or 'Day HH:MM:SS'.")
 
     required_keys = ["email", "password", "centre", "classes", "booking_execution"]
     for key in required_keys:
         if key not in config:
-            raise ValueError(ErrorMessages.missing_required_key(key))
+            raise ConfigError(f"Missing required key in config: {key}")
 
     # Validate global booking_execution
     if config["booking_execution"] != "now":
@@ -47,14 +48,16 @@ def validate_config(config: dict[str, Any]) -> None:
     # Validate individual class definitions
     for cls in config["classes"]:
         if "activity" not in cls or "class_day" not in cls or "class_time" not in cls:
-            raise ValueError(ErrorMessages.invalid_class_definition())
+            raise ConfigError("Each class must include 'activity', 'class_day', 'class_time'")
 
         _validate_day(cls["class_day"])
 
         try:
             datetime.strptime(cls["class_time"], "%H:%M:%S")
         except (TypeError, ValueError) as err:
-            raise ValueError(ErrorMessages.invalid_class_time(cls["class_time"])) from err
+            raise ConfigError(
+                f"Invalid class_time '{cls['class_time']}'. Use the 24-hour format 'HH:MM:SS', e.g. '18:00:00'."
+            ) from err
 
 
 def _validate_day(day: Any) -> None:
@@ -62,10 +65,10 @@ def _validate_day(day: Any) -> None:
     Validate a weekday name using the same normalization as the scheduler.
 
     Raises:
-        ValueError: If the day is not a valid weekday name.
+        ConfigError: If the day is not a valid weekday name.
     """
     if not isinstance(day, str) or day.lower().strip() not in DAY_MAP:
-        raise ValueError(ErrorMessages.invalid_day(day))
+        raise ConfigError(f"Invalid day '{day}'. Valid days are: {VALID_DAYS} (case-insensitive).")
 
 
 def validate_activities(bot: SportBot, config: dict[str, Any]) -> None:
@@ -77,7 +80,7 @@ def validate_activities(bot: SportBot, config: dict[str, Any]) -> None:
         config (Dict[str, Any]): Configuration dictionary.
 
     Raises:
-        ValueError: If an activity is not found.
+        ConfigError: If an activity is not found.
     """
     logger.info("Fetching available activities for validation...")
     available_activities = bot.activities()
@@ -88,6 +91,9 @@ def validate_activities(bot: SportBot, config: dict[str, Any]) -> None:
     for cls in config["classes"]:
         activity_name = cls["activity"]
         if activity_name not in available_activity_names:
-            raise ValueError(ErrorMessages.activity_not_found(activity_name, list(available_activity_names)))
+            raise ConfigError(
+                f"No activity found with the name '{activity_name}'. "
+                f"Available activities are: {', '.join(sorted(available_activity_names))}."
+            )
 
     logger.info("All activities in the configuration file have been validated.")

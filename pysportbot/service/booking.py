@@ -4,9 +4,10 @@ from datetime import datetime
 from typing import Any
 
 import pytz
+import requests
 
 from pysportbot import SportBot
-from pysportbot.utils.errors import ErrorMessages
+from pysportbot.exceptions import SlotAlreadyBookedError, SlotFullError, SportBotError
 from pysportbot.utils.logger import get_logger
 
 from .scheduling import calculate_class_day, calculate_next_execution
@@ -41,17 +42,14 @@ def attempt_booking(
         try:
             bot.book(activity=activity, start_time=f"{booking_date} {class_time}")
 
-        except Exception as e:
-            error_str = str(e)
-            logger.warning(f"Attempt {attempt_num} failed: {error_str}")
+        except (SlotAlreadyBookedError, SlotFullError) as e:
+            # Retrying cannot succeed
+            logger.warning(f"Attempt {attempt_num} failed: {e} Skipping further retries.")
+            return
 
-            # Decide whether to retry based on the error message
-            if ErrorMessages.slot_already_booked() in error_str:
-                logger.warning("Slot already booked; skipping further retries.")
-                return
-            if ErrorMessages.slot_capacity_full() in error_str:
-                logger.warning("Slot capacity full; skipping further retries.")
-                return
+        except (SportBotError, requests.RequestException) as e:
+            # E.g. not bookable yet, unavailable, slot not found, unexpected API response or network error
+            logger.warning(f"Attempt {attempt_num} failed: {e}")
 
             if attempt_num < retry_attempts:
                 logger.info(f"Retrying in {retry_delay} seconds...")

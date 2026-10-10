@@ -7,7 +7,7 @@ from pandas import DataFrame
 
 from .authenticator import Authenticator
 from .endpoints import Endpoints
-from .utils.errors import ErrorMessages
+from .exceptions import ActivityNotFoundError, APIError
 from .utils.logger import get_logger
 from .utils.time import get_day_bounds
 
@@ -46,7 +46,7 @@ class Activities:
                     ['id_activity', 'name_activity', 'id_category_activity']
 
         Raises:
-            RuntimeError: If the request fails or JSON parsing fails.
+            APIError: If the request fails or the response cannot be parsed.
         """
         logger.info(f"Fetching activities for the next {days_ahead} days. This might take a while...")
 
@@ -70,9 +70,13 @@ class Activities:
         response = self.session.post(Endpoints.SLOTS, headers=self.headers, data=payload, timeout=self.timeout)
 
         if response.status_code != 200:
-            error_msg = ErrorMessages.failed_fetch("activities from slots")
-            logger.error(f"{error_msg} Status Code: {response.status_code}")
-            raise RuntimeError(error_msg)
+            logger.error(f"Failed to fetch activities from slots. Status Code: {response.status_code}")
+            raise APIError(
+                "Failed to fetch activities from slots",
+                endpoint=Endpoints.SLOTS,
+                status_code=response.status_code,
+                body=response.text,
+            )
 
         try:
             data = json.loads(response.content.decode("utf-8"))
@@ -94,19 +98,31 @@ class Activities:
             )
 
         except json.JSONDecodeError as err:
-            error_msg = "Invalid JSON response while fetching activities from slots."
-            logger.error(error_msg)
+            logger.error("Invalid JSON response while fetching activities from slots.")
             logger.error(f"Raw response: {response.content.decode('utf-8')}")
-            raise RuntimeError(error_msg) from err
+            raise APIError(
+                "Invalid JSON response while fetching activities from slots",
+                endpoint=Endpoints.SLOTS,
+                status_code=response.status_code,
+                body=response.text,
+            ) from err
         except KeyError as err:
-            error_msg = f"Missing expected key in response: {err}"
-            logger.error(error_msg)
+            logger.error(f"Missing expected key in response: {err}")
             logger.error(f"Raw response: {response.content.decode('utf-8')}")
-            raise RuntimeError(error_msg) from err
+            raise APIError(
+                f"Missing expected key in response: {err}",
+                endpoint=Endpoints.SLOTS,
+                status_code=response.status_code,
+                body=response.text,
+            ) from err
         except Exception as err:
-            error_msg = f"Unexpected error while parsing activities: {err}"
-            logger.error(error_msg)
-            raise RuntimeError(error_msg) from err
+            logger.error(f"Unexpected error while parsing activities: {err}")
+            raise APIError(
+                f"Unexpected error while parsing activities: {err}",
+                endpoint=Endpoints.SLOTS,
+                status_code=response.status_code,
+                body=response.text,
+            ) from err
 
         logger.info(f"Successfully fetched {len(df_activities)} unique activities.")
         return df_activities
@@ -124,19 +140,17 @@ class Activities:
             DataFrame: A DataFrame containing available slots.
 
         Raises:
-            ValueError: If the specified activity is not found.
-            RuntimeError: If slots cannot be fetched.
+            ActivityNotFoundError: If the specified activity is not found.
+            APIError: If slots cannot be fetched.
         """
         logger.info(f"Fetching available slots for '{activity_name}' on {day}...")
 
         # Check if the activity exists
         activity_match = df_activities[df_activities["name_activity"] == activity_name]
         if activity_match.empty:
-            error_msg = ErrorMessages.activity_not_found(
-                activity_name, df_activities["name_activity"].unique().tolist()
-            )
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+            error = ActivityNotFoundError(activity_name, df_activities["name_activity"].unique().tolist())
+            logger.error(str(error))
+            raise error
 
         activity = activity_match.iloc[0]
         id_activity = activity["id_activity"]
@@ -156,25 +170,36 @@ class Activities:
         response = self.session.post(Endpoints.SLOTS, headers=self.headers, data=payload, timeout=self.timeout)
 
         if response.status_code != 200:
-            error_msg = ErrorMessages.failed_fetch("slots")
-            logger.error(error_msg)
-            raise RuntimeError(error_msg)
+            logger.error(f"Failed to fetch slots. Status Code: {response.status_code}")
+            raise APIError(
+                "Failed to fetch slots",
+                endpoint=Endpoints.SLOTS,
+                status_code=response.status_code,
+                body=response.text,
+            )
 
         try:
             data = json.loads(response.content.decode("utf-8"))
             slots = data["data"]["activities_calendar"]
         except json.JSONDecodeError as err:
-            error_msg = "Invalid JSON response while fetching slots."
-            logger.error(error_msg)
-            raise RuntimeError(error_msg) from err
+            logger.error("Invalid JSON response while fetching slots.")
+            raise APIError(
+                "Invalid JSON response while fetching slots",
+                endpoint=Endpoints.SLOTS,
+                status_code=response.status_code,
+                body=response.text,
+            ) from err
         except KeyError as err:
-            error_msg = f"Missing expected key in response: {err}"
-            logger.error(error_msg)
-            raise RuntimeError(error_msg) from err
+            logger.error(f"Missing expected key in response: {err}")
+            raise APIError(
+                f"Missing expected key in response: {err}",
+                endpoint=Endpoints.SLOTS,
+                status_code=response.status_code,
+                body=response.text,
+            ) from err
 
         if not slots:
-            warning_msg = ErrorMessages.no_slots(activity_name, day)
-            logger.warning(warning_msg)
+            logger.warning(f"No slots available for activity '{activity_name}' on {day}.")
             return DataFrame()
 
         logger.debug(f"Daily slots fetched for '{activity_name}' on {day}.")
@@ -201,8 +226,7 @@ class Activities:
         # Only select rows of the specified activity
         df_slots = df_slots[df_slots.id_activity == int(id_activity)]
         if df_slots.empty:
-            warning_msg = ErrorMessages.no_matching_slots(activity_name, day)
-            logger.warning(warning_msg)
+            logger.warning(f"No matching slots found for activity '{activity_name}' on {day}.")
             return DataFrame()
 
         return df_slots

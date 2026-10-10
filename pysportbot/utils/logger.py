@@ -5,8 +5,6 @@ from typing import ClassVar
 
 import pytz
 
-from .errors import ErrorMessages
-
 
 class ColorFormatter(logging.Formatter):
     """Custom formatter to add color-coded log levels and thread information,
@@ -137,7 +135,8 @@ def set_log_level(level: str) -> None:
     """
     level = level.upper()
     if level not in logging._nameToLevel:
-        raise ErrorMessages.invalid_log_level(level)
+        valid_levels = ", ".join(logging._nameToLevel.keys())
+        raise ValueError(f"Invalid logging level: {level}. Valid levels are {valid_levels}.")
     logging.getLogger().setLevel(logging._nameToLevel[level])
     logging.info(f"Log level changed to {level}.")
 

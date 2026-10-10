@@ -1,8 +1,8 @@
 import json
 
 from .endpoints import Endpoints
+from .exceptions import AuthenticationError
 from .session import Session
-from .utils.errors import ErrorMessages
 from .utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -88,8 +88,10 @@ class Authenticator:
             self.authenticated = False
             self.user_id = None
             logger.error(f"Login process failed: {exc}")
-            # Normalize to a consistent login error for callers/tests
-            raise ValueError(ErrorMessages.failed_login()) from exc
+            if isinstance(exc, AuthenticationError):
+                raise
+            # Normalize unexpected errors to a consistent login error for callers
+            raise AuthenticationError(f"unexpected error ({exc})") from exc
 
     def is_session_valid(self) -> bool:
         """
@@ -141,7 +143,7 @@ class Authenticator:
                 response.status_code,
                 response.text[:200],
             )
-            raise ValueError(ErrorMessages.failed_login())
+            raise AuthenticationError(f"login returned HTTP {response.status_code}")
 
         try:
             data = response.json()
@@ -150,7 +152,7 @@ class Authenticator:
                 "JWT login returned non-JSON response. Body (truncated): %r",
                 response.text[:200],
             )
-            raise ValueError(ErrorMessages.failed_login()) from exc
+            raise AuthenticationError("login returned a non-JSON response") from exc
 
         logger.debug(
             "/user/login response keys: %s; applications count=%d",
@@ -164,7 +166,7 @@ class Authenticator:
         apps = data.get("applications") or []
         if not apps:
             logger.error("No applications returned in /user/login response")
-            raise ValueError(ErrorMessages.failed_login())
+            raise AuthenticationError("no applications in login response")
 
         first_app = apps[0]
         self.id_application = first_app.get("id_application")
@@ -176,7 +178,7 @@ class Authenticator:
                 f"jwt_token={self.resasocial_jwt}, id_user={self.id_user}, "
                 f"id_application={self.id_application}"
             )
-            raise ValueError(ErrorMessages.failed_login())
+            raise AuthenticationError("login response is missing jwt_token, id_user or id_application")
 
         logger.info(
             "JWT login successful. id_user=%s, id_application=%s",
@@ -197,7 +199,7 @@ class Authenticator:
 
         if not self.resasocial_jwt or not self.id_user or not self.id_application:
             logger.error("Cannot fetch sport user token without resasocial_jwt, id_user, id_application")
-            raise ValueError(ErrorMessages.failed_login())
+            raise AuthenticationError("cannot fetch sport user token before the Resasocial login")
 
         # Local headers specific to this Resasocial-authenticated call
         social_auth_headers = self.headers.copy()
@@ -221,7 +223,7 @@ class Authenticator:
                 response.status_code,
                 response.text[:200],
             )
-            raise ValueError(ErrorMessages.failed_login())
+            raise AuthenticationError(f"getSportUserToken returned HTTP {response.status_code}")
 
         try:
             data = response.json()
@@ -230,7 +232,7 @@ class Authenticator:
                 "getSportUserToken returned non-JSON response. Body (truncated): %r",
                 response.text[:200],
             )
-            raise ValueError(ErrorMessages.failed_login()) from exc
+            raise AuthenticationError("getSportUserToken returned a non-JSON response") from exc
 
         logger.debug("response keys: %s", list(data.keys()))
 
@@ -239,7 +241,7 @@ class Authenticator:
 
         if not self.sport_jwt:
             logger.error("No jwt_token found in getSportUserToken response")
-            raise ValueError(ErrorMessages.failed_login())
+            raise AuthenticationError("no jwt_token in getSportUserToken response")
 
         logger.info("Nubapp JWT obtained successfully.")
 
@@ -253,7 +255,7 @@ class Authenticator:
         Nubapp API calls (including Activities) share the same auth.
         """
         if not token:
-            raise ValueError(ErrorMessages.failed_login())
+            raise AuthenticationError("no Nubapp token to authenticate with")
 
         logger.debug("Setting Nubapp Authorization header")
         self.headers["Authorization"] = f"Bearer {token}"
@@ -271,7 +273,7 @@ class Authenticator:
         logger.debug("Fetching user info from Nubapp")
 
         if not self.sport_jwt:
-            raise ValueError(ErrorMessages.failed_login())
+            raise AuthenticationError("cannot fetch user information without a Nubapp token")
 
         response = self.session.post(
             Endpoints.USER,
@@ -285,20 +287,20 @@ class Authenticator:
                 response.status_code,
                 response.text[:200],
             )
-            raise ValueError(ErrorMessages.failed_login())
+            raise AuthenticationError(f"user information request returned HTTP {response.status_code}")
 
         try:
             data = response.json()
         except (json.JSONDecodeError, ValueError) as exc:
-            raise ValueError(f"Failed to parse user information: {exc}") from exc
+            raise AuthenticationError(f"failed to parse user information ({exc})") from exc
 
         user_data = data.get("data", {}).get("user")
         if not user_data:
-            raise ValueError("No user data found in response")
+            raise AuthenticationError("no user data in user information response")
 
         user_id = user_data.get("id_user")
         if not user_id:
-            raise ValueError("No user ID found in response")
+            raise AuthenticationError("no user ID in user information response")
 
         self.user_id = str(user_id)
         logger.info("Authentication successful. User ID: %s", self.user_id)

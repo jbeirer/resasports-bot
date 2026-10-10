@@ -1,4 +1,3 @@
-import re
 from datetime import datetime
 from unittest.mock import patch
 
@@ -8,14 +7,15 @@ import requests
 import responses
 
 from pysportbot.endpoints import Endpoints
+from pysportbot.exceptions import ConfigError
 from pysportbot.service.booking import attempt_booking
 from pysportbot.service.config_validator import validate_config
 from pysportbot.service.service import run_service
-from pysportbot.utils.errors import ErrorMessages
 
 # A Friday one week before the fixture's slots on Friday 2030-01-04
 FROZEN_NOW = pytz.timezone("Europe/Madrid").localize(datetime(2029, 12, 28, 7, 30))
 OPEN_SLOT_TIME = "12:00:00"  # Gimnasio, places left
+FULL_SLOT_TIME = "10:00:00"  # Gimnasio, n_inscribed == n_capacity
 
 VALID_CONFIG = {
     "email": "user@example.com",
@@ -83,12 +83,45 @@ def test_attempt_booking_retries_after_network_error(offline_bot, mocked_api, fr
     mock_time.sleep.assert_called_once_with(1)
 
 
+@pytest.mark.parametrize(
+    "response_kwargs",
+    [
+        pytest.param({"json": {"success": False, "error": 99}}, id="unknown-error-code"),
+        pytest.param({"status": 500}, id="api-error"),
+    ],
+)
+def test_attempt_booking_retries_after_other_error(
+    offline_bot, mocked_api, frozen_class_day, mock_time, response_kwargs
+):
+    mocked_api.replace(responses.POST, str(Endpoints.BOOKING), **response_kwargs)
+    mocked_api.add(responses.POST, str(Endpoints.BOOKING), json={"success": True})
+
+    _attempt(offline_bot)
+
+    assert len(_booking_calls(mocked_api)) == 2
+    mock_time.sleep.assert_called_once_with(1)
+
+
+def test_attempt_booking_retries_when_slot_not_found(offline_bot, mocked_api, frozen_class_day, mock_time):
+    attempt_booking(offline_bot, activity="Gimnasio", class_day="Friday", class_time="23:00:00", retry_attempts=3)
+
+    assert _booking_calls(mocked_api) == []
+    assert mock_time.sleep.call_count == 2
+
+
 def test_attempt_booking_stops_when_already_booked(offline_bot, mocked_api, frozen_class_day, mock_time):
     mocked_api.replace(responses.POST, str(Endpoints.BOOKING), json={"success": False, "error": 5})
 
     _attempt(offline_bot)
 
     assert len(_booking_calls(mocked_api)) == 1
+    mock_time.sleep.assert_not_called()
+
+
+def test_attempt_booking_stops_when_slot_full(offline_bot, mocked_api, frozen_class_day, mock_time):
+    attempt_booking(offline_bot, activity="Gimnasio", class_day="Friday", class_time=FULL_SLOT_TIME, retry_attempts=3)
+
+    assert _booking_calls(mocked_api) == []
     mock_time.sleep.assert_not_called()
 
 
@@ -128,7 +161,7 @@ def test_validate_config_normalizes_day_names():
 def test_validate_config_rejects_invalid_execution_day(day):
     config = {**VALID_CONFIG, "booking_execution": f"{day} 07:30:00"}
 
-    with pytest.raises(ValueError, match=re.escape(ErrorMessages.invalid_day(day))):
+    with pytest.raises(ConfigError, match=f"Invalid day '{day}'"):
         validate_config(config)
 
 
@@ -136,7 +169,7 @@ def test_validate_config_rejects_invalid_execution_day(day):
 def test_validate_config_rejects_invalid_class_day(day):
     config = {**VALID_CONFIG, "classes": [{**VALID_CONFIG["classes"][0], "class_day": day}]}
 
-    with pytest.raises(ValueError, match=re.escape(ErrorMessages.invalid_day(day))):
+    with pytest.raises(ConfigError, match=f"Invalid day '{day}'"):
         validate_config(config)
 
 
@@ -144,5 +177,5 @@ def test_validate_config_rejects_invalid_class_day(day):
 def test_validate_config_rejects_invalid_class_time(class_time):
     config = {**VALID_CONFIG, "classes": [{**VALID_CONFIG["classes"][0], "class_time": class_time}]}
 
-    with pytest.raises(ValueError, match=re.escape(ErrorMessages.invalid_class_time(class_time))):
+    with pytest.raises(ConfigError, match=f"Invalid class_time '{class_time}'"):
         validate_config(config)

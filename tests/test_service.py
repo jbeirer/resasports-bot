@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, call, mock_open, patch
 import pandas as pd
 import pytz
 
+from pysportbot.exceptions import ConfigError, SlotAlreadyBookedError, SlotNotFoundError
 from pysportbot.service.booking import attempt_booking, schedule_bookings
 
 # Adjust these imports to match your actual project structure:
@@ -14,7 +15,6 @@ from pysportbot.service.config_validator import DAY_MAP, validate_activities, va
 from pysportbot.service.scheduling import calculate_class_day, calculate_next_execution
 from pysportbot.service.service import run_service
 from pysportbot.service.threading import get_n_threads
-from pysportbot.utils.errors import ErrorMessages
 
 
 class TestConfigLoader(unittest.TestCase):
@@ -73,10 +73,9 @@ class TestConfigValidator(unittest.TestCase):
             "classes": [],
             "booking_execution": "Monday 07:30:00",
         }
-        with self.assertRaises(ValueError) as ctx:
+        with self.assertRaises(ConfigError) as ctx:
             validate_config(config_missing_email)
-        expected_message = ErrorMessages.missing_required_key("email")
-        self.assertIn(expected_message, str(ctx.exception))
+        self.assertIn("Missing required key in config: email", str(ctx.exception))
 
     def test_validate_config_invalid_class_definition(self):
         """
@@ -94,11 +93,10 @@ class TestConfigValidator(unittest.TestCase):
             ],
             "booking_execution": "Monday 07:30:00",
         }
-        with self.assertRaises(ValueError) as ctx:
+        with self.assertRaises(ConfigError) as ctx:
             validate_config(config)
 
-        expected_message = ErrorMessages.invalid_class_definition()
-        self.assertIn(expected_message, str(ctx.exception))
+        self.assertIn("Each class must include", str(ctx.exception))
 
     def test_validate_config_booking_execution_now(self):
         """
@@ -131,10 +129,9 @@ class TestConfigValidator(unittest.TestCase):
             "classes": [],
             "booking_execution": "Monday07:30:00",  # missing space
         }
-        with self.assertRaises(ValueError) as ctx:
+        with self.assertRaises(ConfigError) as ctx:
             validate_config(config)
-        expected_message = ErrorMessages.invalid_booking_execution_format()
-        self.assertIn(expected_message, str(ctx.exception))
+        self.assertIn("Invalid booking_execution format", str(ctx.exception))
 
     @patch("pysportbot.service.config_validator.SportBot")
     def test_validate_activities_unknown_activity(self, mock_sportbot_class):
@@ -159,11 +156,11 @@ class TestConfigValidator(unittest.TestCase):
             "booking_execution": "now",
         }
 
-        with self.assertRaises(ValueError) as ctx:
+        with self.assertRaises(ConfigError) as ctx:
             validate_activities(mock_bot_instance, config)
 
-        expected_message = ErrorMessages.activity_not_found("CrossFit", ["Yoga"])
-        self.assertIn(expected_message, str(ctx.exception))
+        self.assertIn("'CrossFit'", str(ctx.exception))
+        self.assertIn("Yoga", str(ctx.exception))
 
 
 class TestScheduling(unittest.TestCase):
@@ -523,10 +520,9 @@ class TestBooking(unittest.TestCase):
         mock_datetime_sched.now.return_value = mock_now
 
         mock_bot = MagicMock()
-        # Mock the bot.book method to simulate a ValueError for no matching slots
-        mock_bot.book.side_effect = ValueError(
-            ErrorMessages.no_matching_slots_for_time("Yoga", "18:00:00", "2024-01-10")
-        )
+        # Mock the bot.book method to simulate no matching slot
+        error = SlotNotFoundError("Yoga", "2024-01-10 18:00:00")
+        mock_bot.book.side_effect = error
 
         attempt_booking(
             bot=mock_bot,
@@ -543,10 +539,7 @@ class TestBooking(unittest.TestCase):
 
         # On the final attempt, ensure the correct error message was logged
         last_warning = mock_logger.warning.call_args_list[-1][0][0]
-        self.assertIn(
-            ErrorMessages.no_matching_slots_for_time("Yoga", "18:00:00", "2024-01-10"),
-            last_warning,
-        )
+        self.assertIn(str(error), last_warning)
 
     @patch("pysportbot.service.booking.logger")
     @patch("pysportbot.service.scheduling.datetime", wraps=datetime)
@@ -562,7 +555,7 @@ class TestBooking(unittest.TestCase):
         mock_bot = MagicMock()
         mock_bot.daily_slots.return_value = pd.DataFrame({"start_timestamp": ["2024-01-10 18:00:00"]})
         # First attempt raises 'slot already booked', so we skip subsequent attempts
-        mock_bot.book.side_effect = [ValueError(ErrorMessages.slot_already_booked())]
+        mock_bot.book.side_effect = [SlotAlreadyBookedError("123", 5)]
 
         attempt_booking(
             bot=mock_bot,
@@ -715,12 +708,12 @@ class TestServiceRun(unittest.TestCase):
         mock_get_n_threads.assert_called_once_with(-1, 1)
         mock_schedule_bookings.assert_called_once()
 
-    @patch("pysportbot.service.service.validate_config", side_effect=ValueError("Invalid config"))
+    @patch("pysportbot.service.service.validate_config", side_effect=ConfigError("Invalid config"))
     def test_run_service_config_error(self, mock_validate_config):
         """
-        If validate_config raises ValueError, run_service should propagate it.
+        If validate_config raises ConfigError, run_service should propagate it.
         """
-        with self.assertRaises(ValueError) as ctx:
+        with self.assertRaises(ConfigError) as ctx:
             run_service(
                 config={},
                 booking_delay=0,

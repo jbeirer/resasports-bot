@@ -10,6 +10,7 @@ from pysportbot import SportBot
 from pysportbot.activities import SLOTS_READ_TIMEOUT, Activities
 from pysportbot.authenticator import Authenticator
 from pysportbot.endpoints import Endpoints
+from pysportbot.exceptions import ActivityNotFoundError, APIError
 from pysportbot.session import Session
 
 ACTIVITY_COLUMNS = ["id_activity", "name_activity", "id_category_activity"]
@@ -76,7 +77,7 @@ def test_fetch_empty_calendar(activities, mocked_api):
 def test_fetch_failure_raises(activities, mocked_api, response_kwargs):
     mocked_api.replace(responses.POST, str(Endpoints.SLOTS), **response_kwargs)
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(APIError):
         activities.fetch()
 
 
@@ -112,8 +113,11 @@ def test_daily_slots_request_body(activities, mocked_api, payloads):
 def test_daily_slots_unknown_activity_raises(activities):
     df_activities = activities.fetch()
 
-    with pytest.raises(ValueError, match="No activity found with the name 'Zumba'"):
+    with pytest.raises(ActivityNotFoundError) as exc_info:
         activities.daily_slots(df_activities, "Zumba", DAY)
+
+    assert exc_info.value.activity == "Zumba"
+    assert exc_info.value.available == df_activities["name_activity"].tolist()
 
 
 def test_daily_slots_empty_calendar(activities, mocked_api):
@@ -137,7 +141,7 @@ def test_daily_slots_failure_raises(activities, mocked_api, response_kwargs):
     df_activities = activities.fetch()
     mocked_api.replace(responses.POST, str(Endpoints.SLOTS), **response_kwargs)
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(APIError):
         activities.daily_slots(df_activities, "Yoga", DAY)
 
 
