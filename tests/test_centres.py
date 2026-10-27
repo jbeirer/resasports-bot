@@ -1,5 +1,5 @@
 import json
-import logging
+from unittest.mock import patch
 
 import pytest
 import requests
@@ -7,8 +7,7 @@ import responses
 from responses import matchers
 
 from pysportbot import Centre, SportBot
-from pysportbot.centres import MAX_SPLITS, Centres
-from pysportbot.client import ApiClient
+from pysportbot.centres import CENTRES_READ_TIMEOUT, MAX_SPLITS
 from pysportbot.endpoints import Endpoints
 from pysportbot.exceptions import APIError, CentreNotFoundError
 
@@ -56,12 +55,11 @@ def test_centres_search_skips_missing_town(mocked_api, payloads):
     assert [c.slug for c in SportBot().centres(search="ville")] == ["other-centre", "third-centre"]
 
 
-def test_centres_fetched_once(mocked_api, centre_slug):
+def test_centres_fetched_once(mocked_api):
     bot = SportBot()
 
     bot.centres()
     bot.centres(search="test")
-    bot.login("user@example.com", "password", centre_slug)
 
     assert len(_centre_calls(mocked_api)) == 1
 
@@ -74,38 +72,21 @@ def test_centres_returns_copy(mocked_api):
     assert len(bot.centres()) == 3
 
 
-def test_login_fetches_centres(mocked_api, centre_slug):
+def test_login_does_not_fetch_centres(mocked_api, centre_slug):
     SportBot().login("user@example.com", "password", centre_slug)
 
-    assert len(_centre_calls(mocked_api)) == 1
+    assert _centre_calls(mocked_api) == []
 
 
-def test_login_unknown_centre_raises_before_login_request(mocked_api, pysportbot_caplog):
-    pysportbot_caplog.set_level(logging.INFO)
-
-    with pytest.raises(CentreNotFoundError) as exc_info:
-        SportBot().login("user@example.com", "password", "unknown")
-
-    assert exc_info.value.centre == "unknown"
-    assert [c.request.url for c in mocked_api.calls] == [str(Endpoints.CENTRE)]
-    assert "test-centre, other-centre, third-centre" in pysportbot_caplog.text
-
-
-def test_check_centre_unknown_raises(mocked_api):
-    """`check_centre` rejects a slug that is not in the fetched centre list."""
-    centres = Centres(ApiClient())
+def test_login_unknown_centre_lists_account_centres(mocked_api, pysportbot_caplog):
+    bot = SportBot()
 
     with pytest.raises(CentreNotFoundError) as exc_info:
-        centres.check_centre("unknown")
+        bot.login("user@example.com", "password", "unknown")
 
-    assert exc_info.value.centre == "unknown"
-
-
-def test_check_centre_valid_slug_passes(mocked_api, centre_slug):
-    """`check_centre` accepts a slug returned by the centres endpoint."""
-    centres = Centres(ApiClient())
-
-    centres.check_centre(centre_slug)
+    assert (exc_info.value.centre, exc_info.value.available) == ("unknown", ["test-centre"])
+    assert "test-centre" in pysportbot_caplog.text
+    assert bot.is_logged_in() is False
 
 
 # Content errors found after a 2xx response carry no status code
@@ -122,19 +103,12 @@ def test_check_centre_valid_slug_passes(mocked_api, centre_slug):
         pytest.param({"body": requests.ConnectionError("connection refused")}, None, id="connection-error"),
     ],
 )
-@pytest.mark.parametrize(
-    "call",
-    [
-        pytest.param(lambda bot: bot.centres(), id="centres"),
-        pytest.param(lambda bot: bot.login("user@example.com", "password", "test-centre"), id="login"),
-    ],
-)
-def test_fetch_centres_failure_raises_api_error(mocked_api, response_kwargs, status_code, call):
+def test_fetch_centres_failure_raises_api_error(mocked_api, response_kwargs, status_code):
     """A failed centre fetch raises a clear APIError instead of `KeyError: 'slug'`."""
     mocked_api.replace(responses.POST, str(Endpoints.CENTRE), **response_kwargs)
 
     with pytest.raises(APIError) as exc_info:
-        call(SportBot())
+        SportBot().centres()
 
     assert exc_info.value.endpoint == str(Endpoints.CENTRE)
     assert exc_info.value.status_code == status_code
@@ -212,3 +186,12 @@ def test_fetch_centres_does_not_split_on_other_errors(mocked_api):
         SportBot().centres()
 
     assert len(_centre_calls(mocked_api)) == 1
+
+
+def test_centres_request_uses_centres_timeout(mocked_api):
+    bot = SportBot()
+
+    with patch.object(bot._client.session, "request", wraps=bot._client.session.request) as request:
+        bot.centres()
+
+    assert request.call_args.kwargs["timeout"] == (5, CENTRES_READ_TIMEOUT)

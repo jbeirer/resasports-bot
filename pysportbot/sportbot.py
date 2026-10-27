@@ -81,7 +81,7 @@ class SportBot:
         """
         List the centres that use Resasports. Needs no login.
 
-        The centres are fetched on the first call, or by `login()`, and then cached.
+        The centres are fetched on the first call and then cached.
 
         Args:
             search: Only return centres whose slug, name or town contains this text, ignoring case.
@@ -101,18 +101,14 @@ class SportBot:
             centre: The slug of the centre, see `centres()`.
 
         Raises:
-            CentreNotFoundError: If the centre does not exist.
+            CentreNotFoundError: If the account is not registered at the centre.
             AuthenticationError: If logging in fails.
-            APIError: If the centres or the activities cannot be fetched.
+            APIError: If the activities cannot be fetched.
         """
-        # Check if the selected centre is valid
-        self._centres.check_centre(centre)
-        logger.info(f"Selected centre: {centre}")
-
-        logger.info("Attempting to log in...")
+        logger.info(f"Attempting to log in to {centre}...")
         try:
             # Login to get valid credentials
-            self._authenticator.login(email, password)
+            self._authenticator.login(email, password, centre)
             self._is_logged_in = True
             logger.info("Login successful!")
 
@@ -158,9 +154,8 @@ class SportBot:
             return
 
         logger.info("Session is no longer valid. Logging in again...")
-        email, password, _ = self._credentials
         try:
-            self._authenticator.login(email, password)
+            self._authenticator.login(*self._credentials)
         except Exception:
             self._logout()
             raise

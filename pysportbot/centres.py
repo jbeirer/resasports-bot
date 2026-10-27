@@ -6,7 +6,7 @@ import requests
 
 from .client import ApiClient
 from .endpoints import Endpoints
-from .exceptions import APIError, CentreNotFoundError
+from .exceptions import APIError
 from .models import Centre
 
 logger = logging.getLogger(__name__)
@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 # The centres endpoint answers HTTP 500 when an area holds too many centres (a little over 200 in October 2026),
 # so a failed area is split in half up to this many times, into at most 2**MAX_SPLITS areas
 MAX_SPLITS = 4
+# A request for a large area regularly takes over 5 s
+CENTRES_READ_TIMEOUT = 30
 
 
 class Centres:
@@ -53,21 +55,6 @@ class Centres:
         needle = query.casefold()
         return [c for c in centres if any(needle in value.casefold() for value in (c.slug, c.name, c.town) if value)]
 
-    def check_centre(self, centre: str) -> None:
-        """
-        Check that the user selected centre exists.
-
-        Raises:
-            CentreNotFoundError: If the centre is not in the list of available centres.
-            APIError: If the centres cannot be fetched or the response is malformed or empty.
-        """
-        centres = self.get()
-        if all(c.slug != centre for c in centres):
-            error = CentreNotFoundError(centre)
-            logger.error(str(error))
-            logger.info(f"Available centres: {', '.join(c.slug for c in centres)}")
-            raise error
-
     def fetch_centres(self) -> list[Centre]:
         """
         Fetches the info of available centres from Resasports.
@@ -99,7 +86,9 @@ class Centres:
             requests.RequestException: If a request itself fails.
         """
         try:
-            data = self.client.post_json(Endpoints.CENTRE, json={"bounds": bounds})
+            # Keep the client's connect timeout, with a longer read timeout for the slow CENTRE endpoint
+            timeout = (self.client.timeout[0], CENTRES_READ_TIMEOUT)
+            data = self.client.post_json(Endpoints.CENTRE, json={"bounds": bounds}, timeout=timeout)
         except APIError as exc:
             if exc.status_code != 500 or splits == 0:
                 raise

@@ -37,11 +37,14 @@ class ConfigError(SportBotError):
 
 
 class CentreNotFoundError(SportBotError):
-    """The centre is not in the list of available centres."""
+    """The account is not registered at the centre."""
 
-    def __init__(self, centre: str) -> None:
+    def __init__(self, centre: str, available: list[str] | None = None) -> None:
         self.centre = centre
-        super().__init__(f"Centre '{centre}' not found. Please check the list of available centres.")
+        # Slugs of the centres the account is registered at
+        self.available = available or []
+        message = f"Centre '{centre}' not found among the centres of this account"
+        super().__init__(f"{message}: {', '.join(self.available)}." if self.available else f"{message}.")
 
 
 class ActivityNotFoundError(SportBotError):

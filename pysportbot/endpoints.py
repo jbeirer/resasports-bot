@@ -29,6 +29,10 @@ class Endpoints(StrEnum):
     # Used by Centres.fetch_centres() to populate the centre list (slug, name, etc).
     CENTRE = f"{BASE_SOCIAL}/ajax/applications/bounds/"
 
+    # Returns one centre, the same data as an entry of CENTRE, by its id_application; fill in with .format()
+    # Used by Authenticator.login() to find which of the account's applications is the requested centre.
+    APPLICATION = f"{BASE_SOCIAL}/application/{{id_application}}"
+
     # ============================================================
     # Authentication
     # ============================================================

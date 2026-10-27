@@ -24,7 +24,7 @@ SLOT_ID = "5001"
 def bookings(mocked_api) -> Bookings:
     client = ApiClient()
     auth = Authenticator(client)
-    auth.login("user@example.com", "password")
+    auth.login("user@example.com", "password", "test-centre")
     return Bookings(client, auth)
 
 
