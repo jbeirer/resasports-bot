@@ -153,6 +153,20 @@ def test_fetch_centres_splits_area_on_500(mocked_api, payloads):
     assert [_bounds_of(c) for c in _centre_calls(mocked_api)] == [WORLD, {**WORLD, "east": 0}, {**WORLD, "west": 0}]
 
 
+def test_fetch_centres_splits_area_on_read_timeout(mocked_api, payloads):
+    mocked_api.remove(responses.POST, str(Endpoints.CENTRE))
+    for bounds, response in [
+        (WORLD, {"body": requests.ReadTimeout("read timed out")}),
+        ({**WORLD, "east": 0}, {"json": {"applications": []}}),
+        ({**WORLD, "west": 0}, {"json": payloads["centres"]}),
+    ]:
+        mocked_api.add(
+            responses.POST, str(Endpoints.CENTRE), match=[matchers.json_params_matcher({"bounds": bounds})], **response
+        )
+
+    assert len(SportBot().centres()) == 3
+
+
 def test_fetch_centres_split_halves_may_be_empty(mocked_api, payloads):
     """A half without centres is fine as long as the merged list is not empty."""
     mocked_api.remove(responses.POST, str(Endpoints.CENTRE))
@@ -168,19 +182,33 @@ def test_fetch_centres_split_halves_may_be_empty(mocked_api, payloads):
     assert len(SportBot().centres()) == 3
 
 
-def test_fetch_centres_gives_up_after_max_splits(mocked_api):
+@pytest.mark.parametrize(
+    ("response_kwargs", "status_code"),
+    [
+        pytest.param({"status": 500}, 500, id="http-500"),
+        pytest.param({"body": requests.ReadTimeout("read timed out")}, None, id="read-timeout"),
+    ],
+)
+def test_fetch_centres_gives_up_after_max_splits(mocked_api, response_kwargs, status_code):
     """An area that keeps failing is split MAX_SPLITS times, then the error is raised without trying other areas."""
-    mocked_api.replace(responses.POST, str(Endpoints.CENTRE), status=500)
+    mocked_api.replace(responses.POST, str(Endpoints.CENTRE), **response_kwargs)
 
     with pytest.raises(APIError) as exc_info:
         SportBot().centres()
 
-    assert exc_info.value.status_code == 500
+    assert exc_info.value.status_code == status_code
     assert len(_centre_calls(mocked_api)) == MAX_SPLITS + 1
 
 
-def test_fetch_centres_does_not_split_on_other_errors(mocked_api):
-    mocked_api.replace(responses.POST, str(Endpoints.CENTRE), status=503)
+@pytest.mark.parametrize(
+    "response_kwargs",
+    [
+        pytest.param({"status": 503}, id="non-500"),
+        pytest.param({"body": requests.ConnectTimeout("connect timed out")}, id="connect-timeout"),
+    ],
+)
+def test_fetch_centres_does_not_split_on_other_errors(mocked_api, response_kwargs):
+    mocked_api.replace(responses.POST, str(Endpoints.CENTRE), **response_kwargs)
 
     with pytest.raises(APIError):
         SportBot().centres()

@@ -166,4 +166,12 @@ def test_post_retries_only_connection_errors(client, error, attempts):
 def test_retry_policy(client):
     retry = client.session.get_adapter(URL).max_retries
 
-    assert (retry.connect, retry.read, retry.status, retry.other) == (2, 0, 0, 0)
+    assert (retry.connect, retry.read, retry.status, retry.other) == (2, False, 0, 0)
+
+
+def test_read_timeout_raises_read_timeout(client):
+    with (
+        patch.object(HTTPConnectionPool, "_make_request", side_effect=ReadTimeoutError(None, URL, "read timed out")),
+        pytest.raises(requests.ReadTimeout),
+    ):
+        client.post_json(URL, data={"id_activity_calendar": "1"})

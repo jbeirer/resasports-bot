@@ -40,7 +40,8 @@ class ApiClient:
         # (base URL, token): the token is only sent to that service, never to the other one sharing this session
         self._bearer: tuple[str, str] | None = None
         # Retry only failures where the request never reached the server; never re-send a booking.
-        retry = Retry(total=None, connect=2, read=0, status=0, other=0, allowed_methods=None, backoff_factor=0.3)
+        # read=False raises a read timeout as requests.ReadTimeout; read=0 would wrap it in a ConnectionError.
+        retry = Retry(total=None, connect=2, read=False, status=0, other=0, allowed_methods=None, backoff_factor=0.3)
         self.session.mount("https://", HTTPAdapter(max_retries=retry))
 
     def set_bearer_token(self, token: str, *, base_url: str) -> None:
