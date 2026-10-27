@@ -11,11 +11,11 @@ from .models import Centre
 
 logger = logging.getLogger(__name__)
 
-# The centres endpoint answers HTTP 500 when an area holds too many centres (a little over 200 in October 2026),
-# so a failed area is split in half up to this many times, into at most 2**MAX_SPLITS areas
+# The centres endpoint answers HTTP 500, or no answer in time, when an area holds too many centres (a little over
+# 200 in October 2026), so a failed area is split in half up to this many times, into at most 2**MAX_SPLITS areas
 MAX_SPLITS = 4
-# A request for a large area regularly takes over 5 s
-CENTRES_READ_TIMEOUT = 30
+# A request that succeeds takes up to ~8 s; a slower one is treated as too large and split
+CENTRES_READ_TIMEOUT = 15
 
 
 class Centres:
@@ -79,7 +79,8 @@ class Centres:
 
     def _fetch_applications(self, bounds: dict[str, float], splits: int) -> list[Any]:
         """
-        Fetch the raw centre entries inside `bounds`, splitting it in half along its longer side on HTTP 500.
+        Fetch the raw centre entries inside `bounds`, splitting it in half along its longer side on HTTP 500 or a
+        read timeout.
 
         Raises:
             APIError: If an area still fails after `splits` splits, or a response is malformed.
@@ -89,10 +90,11 @@ class Centres:
             # Keep the client's connect timeout, with a longer read timeout for the slow CENTRE endpoint
             timeout = (self.client.timeout[0], CENTRES_READ_TIMEOUT)
             data = self.client.post_json(Endpoints.CENTRE, json={"bounds": bounds}, timeout=timeout)
-        except APIError as exc:
-            if exc.status_code != 500 or splits == 0:
+        except (APIError, requests.ReadTimeout) as exc:
+            too_large = isinstance(exc, requests.ReadTimeout) or exc.status_code == 500
+            if not too_large or splits == 0:
                 raise
-            logger.debug(f"Centres request for {bounds} returned HTTP 500; splitting the area in half.")
+            logger.debug(f"Centres request for {bounds} failed ({exc}); splitting the area in half.")
             return [app for half in _halves(bounds) for app in self._fetch_applications(half, splits - 1)]
 
         applications = data.get("applications", [])
