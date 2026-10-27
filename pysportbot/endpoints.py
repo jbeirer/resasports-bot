@@ -54,6 +54,7 @@ class Endpoints(StrEnum):
     # Activities & Scheduling
     # ============================================================
 
+    # Lists every activity of the centre, including archived ones; mode=activities leaves out courses
     ACTIVITIES = f"{BASE_NUBAPP}/{NUBAPP_API}/activities/getActivities.php"
     SLOTS = f"{BASE_NUBAPP}/{NUBAPP_API}/activities/getActivitiesCalendar.php"
 

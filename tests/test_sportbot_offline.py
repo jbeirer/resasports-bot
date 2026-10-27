@@ -215,6 +215,8 @@ def test_failed_relogin_clears_activities(offline_bot, mocked_api, centre_slug):
 
 def test_activities_failure_after_authentication_logs_out(mocked_api, centre_slug):
     """If authentication succeeds but fetching activities fails, no authenticated state is left behind."""
+    # Both the activities list and its calendar fallback fail
+    mocked_api.replace(responses.POST, str(Endpoints.ACTIVITIES), status=500)
     mocked_api.replace(responses.POST, str(Endpoints.SLOTS), status=500)
     bot = SportBot()
 
@@ -281,14 +283,14 @@ def test_ensure_logged_in_relogs_once_when_session_expired(offline_bot, mocked_a
 
 
 def test_ensure_logged_in_relogin_skips_activities_fetch(offline_bot, mocked_api, payloads):
-    """Re-login right before a booking must not wait for the slow activities request."""
-    slots_calls = len(_calls_to(mocked_api, Endpoints.SLOTS))
+    """Re-login right before a booking must not wait for the activities request."""
+    activities_calls = len(_calls_to(mocked_api, Endpoints.ACTIVITIES))
     mocked_api.replace(responses.POST, str(Endpoints.USER), status=401)
     mocked_api.add(responses.POST, str(Endpoints.USER), json=payloads["user"])
 
     offline_bot.ensure_logged_in()
 
-    assert len(_calls_to(mocked_api, Endpoints.SLOTS)) == slots_calls
+    assert len(_calls_to(mocked_api, Endpoints.ACTIVITIES)) == activities_calls
     assert len(offline_bot.activities()) > 0
 
 
@@ -312,12 +314,12 @@ def test_ensure_logged_in_after_failed_relogin_does_full_login(offline_bot, mock
         offline_bot.ensure_logged_in()
     mocked_api.replace(responses.POST, str(Endpoints.USER), json=payloads["user"])
     mocked_api.replace(responses.POST, str(Endpoints.USER_LOGIN), json=payloads["user_login"])
-    slots_calls = len(_calls_to(mocked_api, Endpoints.SLOTS))
+    activities_calls = len(_calls_to(mocked_api, Endpoints.ACTIVITIES))
 
     offline_bot.ensure_logged_in()
 
     assert offline_bot.is_logged_in() is True
-    assert len(_calls_to(mocked_api, Endpoints.SLOTS)) == slots_calls + 1
+    assert len(_calls_to(mocked_api, Endpoints.ACTIVITIES)) == activities_calls + 1
 
 
 def test_ensure_logged_in_requires_login(mocked_api):
