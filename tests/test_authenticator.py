@@ -1,11 +1,12 @@
 import json
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 import requests
 import responses
 
-from pysportbot.authenticator import Authenticator
+from pysportbot.authenticator import LOGIN_READ_TIMEOUT, RETRY_DELAYS, Authenticator
 from pysportbot.client import ApiClient
 from pysportbot.endpoints import Endpoints
 from pysportbot.exceptions import AuthenticationError, CentreNotFoundError
@@ -240,3 +241,74 @@ def test_nubapp_token_is_not_sent_to_resasocial(auth, client, mocked_api):
 
     [centre_call] = [c for c in mocked_api.calls if c.request.url == str(Endpoints.CENTRE)]
     assert "Authorization" not in centre_call.request.headers
+
+
+def _login_calls(mocked_api):
+    return [c for c in mocked_api.calls if c.request.url == str(Endpoints.USER_LOGIN)]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param({"body": requests.ReadTimeout("read timed out")}, id="read-timeout"),
+        pytest.param({"body": requests.ConnectionError("connection reset")}, id="connection-error"),
+        pytest.param({"status": 503}, id="http-5xx"),
+    ],
+)
+def test_login_request_is_retried_after_temporary_failure(auth, mocked_api, payloads, login_retry_sleeps, error):
+    mocked_api.replace(responses.POST, str(Endpoints.USER_LOGIN), **error)
+    mocked_api.add(responses.POST, str(Endpoints.USER_LOGIN), json=payloads["user_login"])
+
+    auth.login("user@example.com", "password", "test-centre")
+
+    assert auth.authenticated is True
+    assert len(_login_calls(mocked_api)) == 2
+    assert login_retry_sleeps == [RETRY_DELAYS[0]]
+
+
+def test_every_login_step_is_retried(auth, mocked_api, payloads, login_retry_sleeps):
+    """The steps after the Resasocial login only read too, so they are retried the same way."""
+    mocked_api.replace(responses.POST, str(Endpoints.USER), status=502)
+    mocked_api.add(responses.POST, str(Endpoints.USER), json=payloads["user"])
+
+    auth.login("user@example.com", "password", "test-centre")
+
+    assert auth.authenticated is True
+    assert login_retry_sleeps == [RETRY_DELAYS[0]]
+
+
+def test_login_gives_up_after_retries(auth, mocked_api, login_retry_sleeps):
+    mocked_api.replace(responses.POST, str(Endpoints.USER_LOGIN), status=503)
+
+    with pytest.raises(AuthenticationError) as exc_info:
+        auth.login("user@example.com", "password", "test-centre")
+
+    assert exc_info.value.reason == "login returned HTTP 503"
+    assert len(_login_calls(mocked_api)) == len(RETRY_DELAYS) + 1
+    assert login_retry_sleeps == list(RETRY_DELAYS)
+    assert auth.authenticated is False
+
+
+@pytest.mark.parametrize(
+    "response_kwargs",
+    [
+        pytest.param({"status": 401}, id="http-4xx"),
+        pytest.param({"body": "<html></html>"}, id="invalid-response"),
+    ],
+)
+def test_login_is_not_retried_after_permanent_failure(auth, mocked_api, login_retry_sleeps, response_kwargs):
+    """Wrong credentials or an unexpected response cannot be fixed by sending the request again."""
+    mocked_api.replace(responses.POST, str(Endpoints.USER_LOGIN), **response_kwargs)
+
+    with pytest.raises(AuthenticationError):
+        auth.login("user@example.com", "password", "test-centre")
+
+    assert len(_login_calls(mocked_api)) == 1
+    assert login_retry_sleeps == []
+
+
+def test_login_requests_use_login_timeout(auth, client):
+    with patch.object(client.session, "request", wraps=client.session.request) as request:
+        auth.login("user@example.com", "password", "test-centre")
+
+    assert {call.kwargs["timeout"] for call in request.call_args_list} == {(5, LOGIN_READ_TIMEOUT)}

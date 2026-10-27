@@ -50,6 +50,15 @@ def load_fixture(name: str) -> dict:
     return json.loads((FIXTURES_DIR / name).read_text())
 
 
+@pytest.fixture(autouse=True)
+def login_retry_sleeps(request, monkeypatch) -> list[float]:
+    """Record the waits between login retries instead of sleeping, except in live tests."""
+    sleeps: list[float] = []
+    if request.node.get_closest_marker("live") is None:
+        monkeypatch.setattr("pysportbot.authenticator.time.sleep", sleeps.append)
+    return sleeps
+
+
 @pytest.fixture
 def payloads() -> dict[str, dict]:
     """Fresh copies of all fixture payloads, keyed by file stem (e.g. payloads["user_login"])."""
