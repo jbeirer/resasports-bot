@@ -26,6 +26,7 @@ DEFAULT_RESPONSES = [
     (responses.GET, Endpoints.APPLICATION.format(id_application=1234), "application.json"),
     (responses.GET, Endpoints.SPORT_USER_TOKEN, "sport_user_token.json"),
     (responses.POST, Endpoints.USER, "user.json"),
+    (responses.POST, Endpoints.ACTIVITIES, "activities.json"),
     (responses.POST, Endpoints.SLOTS, "activities_calendar.json"),
 ]
 

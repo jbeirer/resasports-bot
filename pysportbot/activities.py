@@ -1,8 +1,12 @@
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
+from itertools import chain
 from typing import Any
 from zoneinfo import ZoneInfo
+
+import requests
 
 from .authenticator import Authenticator
 from .client import ApiClient
@@ -14,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 # The SLOTS endpoint is slow: a multi-day calendar regularly takes over 10 s and occasionally much longer
 SLOTS_READ_TIMEOUT = 120
+# Days of the calendar, starting today, that fetch() falls back to when the activities list fails
+CALENDAR_DAYS = 8
 
 
 class Activities:
@@ -58,36 +64,70 @@ class Activities:
             raise APIError("The activities calendar is not a list", endpoint=Endpoints.SLOTS, body=json.dumps(data))
         return calendar
 
-    def fetch(self, days_ahead: int = 7) -> list[Activity]:
+    def fetch(self) -> list[Activity]:
         """
-        Fetch all available unique activities within a specified time range using SLOTS endpoint.
+        Fetch the activities of the centre that can be booked online.
 
-        Args:
-            days_ahead (int): Number of days from now to fetch activities for. Defaults to 7.
+        The activities list answers in well under a second. If it fails or has no bookable activities, the
+        activities are collected from the calendar of the next CALENDAR_DAYS days instead, which takes several seconds.
 
         Returns:
-            list[Activity]: The unique activities, in calendar order; the first entry of each activity ID wins.
+            list[Activity]: The unique activities.
 
         Raises:
-            APIError: If the request fails or the response cannot be parsed.
+            APIError: If neither the list nor the calendar can be fetched or parsed.
         """
-        logger.info(f"Fetching activities for the next {days_ahead} days. This might take a while...")
+        logger.info("Fetching activities...")
+        try:
+            activities = self._list()
+        except (APIError, requests.RequestException) as exc:
+            logger.warning(f"Listing activities failed ({exc}); collecting them from the calendar instead.")
+            activities = self._from_calendar()
+        else:
+            if not activities:
+                # In case a centre flags its activities differently
+                logger.warning("The activities list has no bookable activities; collecting them from the calendar.")
+                activities = self._from_calendar()
 
-        # Date range in the configured time zone; the API expects plain 'YYYY-MM-DD' dates
+        if not activities:
+            logger.warning("No activities found.")
+        else:
+            logger.info(f"Successfully fetched {len(activities)} unique activities.")
+        return activities
+
+    def _list(self) -> list[Activity]:
+        """
+        List the activities that can be booked online, leaving out archived ones and courses.
+
+        Raises:
+            APIError: If the request fails or the response is malformed.
+        """
+        payload = {"mode": "activities", "id_application": self.auth.id_application}
+        data = self.client.post_json(Endpoints.ACTIVITIES, data=payload)
+        body = data.get("data")
+        entries = body.get("activities") if isinstance(body, dict) else None
+        if not isinstance(entries, list):
+            raise APIError("The activities list is not a list", endpoint=Endpoints.ACTIVITIES, body=json.dumps(data))
+        return [activity for entry in entries if (activity := Activity.from_listing(entry)) is not None]
+
+    def _from_calendar(self) -> list[Activity]:
+        """
+        Collect the unique activities in the calendar of the next CALENDAR_DAYS days, in calendar order.
+
+        Raises:
+            APIError: If a request fails or a response cannot be parsed.
+        """
+        # Days in the configured time zone; one request per day, in parallel, as a multi-day request is much slower
         today = datetime.now(ZoneInfo(self.time_zone)).date()
-        calendar = self._calendar(today.isoformat(), (today + timedelta(days=days_ahead)).isoformat())
-
-        if not calendar:
-            logger.warning("No activities found in the response.")
-            return []
+        days = [(today + timedelta(days=offset)).isoformat() for offset in range(CALENDAR_DAYS)]
+        with ThreadPoolExecutor(max_workers=CALENDAR_DAYS) as pool:
+            calendars = list(pool.map(lambda day: self._calendar(day, day), days))
 
         # Keep the first occurrence of each activity
         activities: dict[int, Activity] = {}
-        for entry in calendar:
+        for entry in chain.from_iterable(calendars):
             activity = Activity.from_api(entry)
             activities.setdefault(activity.id, activity)
-
-        logger.info(f"Successfully fetched {len(activities)} unique activities.")
         return list(activities.values())
 
     def daily_slots(self, activities: list[Activity], activity_name: str, day: date | str) -> list[Slot]:

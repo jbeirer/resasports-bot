@@ -1,0 +1,14 @@
+{
+  "message": "All right! Here is your data.",
+  "success": true,
+  "data": {
+    "activities": [
+      {"id_activity": 101, "name_activity": "Yoga", "id_category": 10, "is_archived": false, "is_course": false, "bookable_online": 1},
+      {"id_activity": 104, "name_activity": "Yoga (old)", "id_category": 10, "is_archived": true, "is_course": false, "bookable_online": 1},
+      {"id_activity": 202, "name_activity": "Gimnasio", "id_category": 20, "is_archived": false, "is_course": false, "bookable_online": 1},
+      {"id_activity": 205, "name_activity": "Yoga course (Jan-Mar)", "id_category": 10, "is_archived": false, "is_course": true, "bookable_online": 1},
+      {"id_activity": 206, "name_activity": "Reserved for events", "id_category": 20, "is_archived": false, "is_course": false, "bookable_online": 0},
+      {"id_activity": 303, "name_activity": "Pilates", "id_category": 10, "is_archived": false, "is_course": false, "bookable_online": 1}
+    ]
+  }
+}

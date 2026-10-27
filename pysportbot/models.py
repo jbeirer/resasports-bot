@@ -146,6 +146,25 @@ class Activity:
             category_id=fields.integer("id_category_activity"),
         )
 
+    @classmethod
+    def from_listing(cls, data: Mapping[str, Any]) -> Self | None:
+        """
+        Build an activity from one entry of the activities list, or return None if it cannot be booked: archived,
+        a course, or not bookable online.
+
+        Raises:
+            APIError: If a field is missing or not an integer where one is expected.
+        """
+        fields = _Fields(data, Endpoints.ACTIVITIES)
+        if fields.flag("is_archived") or fields.flag("is_course") or not fields.flag("bookable_online"):
+            return None
+        return cls(
+            id=fields.integer("id_activity"),
+            name=fields.text("name_activity"),
+            # The same ID as id_category_activity in the activities calendar
+            category_id=fields.integer("id_category"),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class Slot:

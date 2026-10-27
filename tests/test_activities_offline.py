@@ -4,10 +4,11 @@ from urllib.parse import parse_qs
 from zoneinfo import ZoneInfo
 
 import pytest
+import requests
 import responses
 
 from pysportbot import Activity, SportBot
-from pysportbot.activities import SLOTS_READ_TIMEOUT, Activities
+from pysportbot.activities import CALENDAR_DAYS, SLOTS_READ_TIMEOUT, Activities
 from pysportbot.authenticator import Authenticator
 from pysportbot.client import ApiClient
 from pysportbot.endpoints import Endpoints
@@ -36,7 +37,72 @@ def _slots_calls(mocked_api):
     return [c for c in mocked_api.calls if c.request.url == str(Endpoints.SLOTS)]
 
 
-def test_fetch_dedupes_by_id_activity(activities, payloads):
+def _activities_calls(mocked_api):
+    return [c for c in mocked_api.calls if c.request.url == str(Endpoints.ACTIVITIES)]
+
+
+@pytest.fixture
+def listing_fails(mocked_api):
+    """Make the activities list fail, so fetch() falls back to the calendar."""
+    mocked_api.replace(responses.POST, str(Endpoints.ACTIVITIES), status=500)
+
+
+def test_fetch_lists_bookable_activities(activities, mocked_api):
+    """Archived activities, courses and activities that cannot be booked online are left out."""
+    result = activities.fetch()
+
+    assert result == [
+        Activity(id=101, name="Yoga", category_id=10),
+        Activity(id=202, name="Gimnasio", category_id=20),
+        Activity(id=303, name="Pilates", category_id=10),
+    ]
+    assert _slots_calls(mocked_api) == []
+
+
+def test_fetch_sends_mode_and_application(activities, mocked_api, payloads):
+    activities.fetch()
+
+    [call] = _activities_calls(mocked_api)
+    login_app = payloads["user_login"]["applications"][0]
+    assert parse_qs(call.request.body) == {"mode": ["activities"], "id_application": [str(login_app["id_application"])]}
+
+
+def test_fetch_coerces_listing_ids_and_numeric_flags(activities, mocked_api):
+    entry = {
+        "id_activity": "101",
+        "name_activity": "Yoga",
+        "id_category": "10",
+        "is_archived": 0,
+        "bookable_online": "1",
+    }
+    mocked_api.replace(responses.POST, str(Endpoints.ACTIVITIES), json={"data": {"activities": [entry]}})
+
+    assert activities.fetch() == [Activity(id=101, name="Yoga", category_id=10)]
+
+
+@pytest.mark.parametrize(
+    "response_kwargs",
+    [
+        pytest.param({"status": 500}, id="non-200"),
+        pytest.param({"body": "not json"}, id="invalid-json"),
+        pytest.param({"json": {"data": {}}}, id="missing-key"),
+        pytest.param({"json": {"data": []}}, id="data-not-an-object"),
+        pytest.param({"json": {"data": {"activities": {"id_activity": 1}}}}, id="not-a-list"),
+        pytest.param({"json": {"data": {"activities": [{"name_activity": "Yoga", "bookable_online": 1}]}}}, id="field"),
+        pytest.param({"body": requests.ConnectionError("connection refused")}, id="connection-error"),
+        pytest.param({"json": {"data": {"activities": []}}}, id="no-bookable-activities"),
+    ],
+)
+def test_fetch_falls_back_to_calendar(activities, mocked_api, payloads, response_kwargs):
+    mocked_api.replace(responses.POST, str(Endpoints.ACTIVITIES), **response_kwargs)
+
+    result = activities.fetch()
+
+    assert [a.name for a in result] == ["Yoga", "Gimnasio", "Pilates"]
+    assert len(_slots_calls(mocked_api)) == CALENDAR_DAYS
+
+
+def test_calendar_fallback_dedupes_by_id_activity(activities, payloads, listing_fails):
     result = activities.fetch()
 
     calendar = payloads["activities_calendar"]["data"]["activities_calendar"]
@@ -46,7 +112,7 @@ def test_fetch_dedupes_by_id_activity(activities, payloads):
     assert result[0] == Activity(id=101, name="Yoga", category_id=10)
 
 
-def test_fetch_keeps_first_occurrence_and_coerces_ids(activities, mocked_api, payloads):
+def test_calendar_fallback_keeps_first_occurrence_and_coerces_ids(activities, mocked_api, payloads, listing_fails):
     calendar = payloads["activities_calendar"]["data"]["activities_calendar"]
     # The same activity with its id as a string, under a different name: the first entry wins
     duplicate = {**calendar[0], "id_activity": str(calendar[0]["id_activity"]), "name_activity": "Yoga (renamed)"}
@@ -59,19 +125,20 @@ def test_fetch_keeps_first_occurrence_and_coerces_ids(activities, mocked_api, pa
     assert [a.name for a in result] == ["Yoga", "Gimnasio", "Pilates"]
 
 
-def test_fetch_sends_user_and_week_window(activities, mocked_api, payloads):
+def test_calendar_fallback_requests_one_day_each(activities, mocked_api, payloads, listing_fails):
     activities.fetch()
 
-    body = parse_qs(_slots_calls(mocked_api)[-1].request.body)
+    bodies = [parse_qs(c.request.body) for c in _slots_calls(mocked_api)]
     login_app = payloads["user_login"]["applications"][0]
-    assert body["id_application"] == [str(login_app["id_application"])]
-    assert body["id_user"] == [str(login_app["id_user"])]
-    [start], [end] = body["start_timestamp"], body["end_timestamp"]
-    assert date.fromisoformat(end) - date.fromisoformat(start) == timedelta(days=7)
+    assert all(b["id_application"] == [str(login_app["id_application"])] for b in bodies)
+    assert all(b["id_user"] == [str(login_app["id_user"])] for b in bodies)
+    assert all(b["start_timestamp"] == b["end_timestamp"] for b in bodies)
+    days = sorted(date.fromisoformat(b["start_timestamp"][0]) for b in bodies)
+    assert days == [days[0] + timedelta(days=offset) for offset in range(CALENDAR_DAYS)]
 
 
 @pytest.mark.parametrize("calendar", [pytest.param([], id="empty"), pytest.param(None, id="null")])
-def test_fetch_empty_calendar(activities, mocked_api, calendar):
+def test_calendar_fallback_empty_calendar(activities, mocked_api, calendar, listing_fails):
     mocked_api.replace(responses.POST, str(Endpoints.SLOTS), json={"data": {"activities_calendar": calendar}})
 
     assert activities.fetch() == []
@@ -87,7 +154,8 @@ def test_fetch_empty_calendar(activities, mocked_api, calendar):
         pytest.param({"json": {"data": {"activities_calendar": [{"name_activity": "Yoga"}]}}}, id="missing-field"),
     ],
 )
-def test_fetch_failure_raises(activities, mocked_api, response_kwargs):
+def test_fetch_failure_raises(activities, mocked_api, response_kwargs, listing_fails):
+    """If the calendar fallback fails as well, the error is raised."""
     mocked_api.replace(responses.POST, str(Endpoints.SLOTS), **response_kwargs)
 
     with pytest.raises(APIError):
@@ -241,13 +309,13 @@ def test_daily_slots_no_matching_activity(activities, mocked_api, payloads):
 
 
 @pytest.mark.parametrize(
-    ("time_zone", "expected_start", "expected_end"),
+    ("time_zone", "expected_start"),
     [
-        ("Europe/Madrid", "2030-01-04", "2030-01-11"),
-        ("America/New_York", "2030-01-03", "2030-01-10"),
+        ("Europe/Madrid", "2030-01-04"),
+        ("America/New_York", "2030-01-03"),
     ],
 )
-def test_fetch_window_uses_configured_time_zone(mocked_api, time_zone, expected_start, expected_end):
+def test_calendar_fallback_starts_today_in_configured_time_zone(mocked_api, time_zone, expected_start, listing_fails):
     client = ApiClient()
     auth = Authenticator(client)
     auth.login("user@example.com", "password", "test-centre")
@@ -257,23 +325,22 @@ def test_fetch_window_uses_configured_time_zone(mocked_api, time_zone, expected_
         mock_datetime.now.side_effect = _frozen_now
         activities.fetch()
 
-    body = parse_qs(_slots_calls(mocked_api)[-1].request.body)
-    assert body["start_timestamp"] == [expected_start]
-    assert body["end_timestamp"] == [expected_end]
+    days = sorted(parse_qs(c.request.body)["start_timestamp"][0] for c in _slots_calls(mocked_api))
+    assert days[0] == expected_start
 
 
-def test_sportbot_passes_time_zone_to_activities(mocked_api, centre_slug):
+def test_sportbot_passes_time_zone_to_activities(mocked_api, centre_slug, listing_fails):
     bot = SportBot(time_zone="Europe/Madrid")
 
     with patch("pysportbot.activities.datetime", wraps=datetime) as mock_datetime:
         mock_datetime.now.side_effect = _frozen_now
         bot.login("user@example.com", "password", centre_slug)
 
-    body = parse_qs(_slots_calls(mocked_api)[-1].request.body)
-    assert body["start_timestamp"] == ["2030-01-04"]
+    days = sorted(parse_qs(c.request.body)["start_timestamp"][0] for c in _slots_calls(mocked_api))
+    assert days[0] == "2030-01-04"
 
 
-@pytest.mark.parametrize("method", ["fetch", "daily_slots"])
+@pytest.mark.parametrize("method", ["_from_calendar", "daily_slots"])
 def test_requests_use_slots_timeout(activities, method):
     acts = activities.fetch()
     args = (acts, "Yoga", DAY) if method == "daily_slots" else ()
