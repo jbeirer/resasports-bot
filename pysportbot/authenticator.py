@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Any
 
 import requests
@@ -8,6 +9,12 @@ from .endpoints import Endpoints
 from .exceptions import APIError, AuthenticationError, CentreNotFoundError, SportBotError
 
 logger = logging.getLogger(__name__)
+
+# Seconds to wait before sending a login request again after a timeout, a connection error or HTTP 5xx. Login requests
+# only read, so sending one again is safe; the Resasocial login has been seen to answer in over 10 s once in a while
+RETRY_DELAYS = (1.0, 3.0)
+# Read timeout of each login request; the login normally answers in about 2 s
+LOGIN_READ_TIMEOUT = 15
 
 
 class Authenticator:
@@ -77,7 +84,27 @@ class Authenticator:
         self._client.clear_bearer_token()
 
     def _request(self, step: str, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
+        """
+        Send a login request, and send it again after each of RETRY_DELAYS if it fails in a way that may be temporary.
+
+        Raises:
+            AuthenticationError: If the response is bad, naming the step.
+            requests.RequestException: If the last attempt fails to get a response.
+        """
+        for delay in RETRY_DELAYS:
+            try:
+                return self._request_once(step, method, url, **kwargs)
+            except (AuthenticationError, requests.Timeout, requests.ConnectionError) as exc:
+                if not _is_temporary(exc):
+                    raise
+                logger.warning(f"Login step '{step}' failed ({exc}); retrying in {delay:g} s.")
+                time.sleep(delay)
+        return self._request_once(step, method, url, **kwargs)
+
+    def _request_once(self, step: str, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
         """Send a login request, turning an APIError into an AuthenticationError that names the step."""
+        # Keep the client's connect timeout, with a longer read timeout
+        kwargs.setdefault("timeout", (self._client.timeout[0], LOGIN_READ_TIMEOUT))
         try:
             return self._client.request_json(method, url, **kwargs)
         except APIError as exc:
@@ -146,3 +173,11 @@ class Authenticator:
 
         logger.info(f"Authentication successful. User ID: {user['id_user']}")
         return str(user["id_user"])
+
+
+def _is_temporary(error: Exception) -> bool:
+    """Whether a failed login request may work if sent again: a timeout, a connection error or HTTP 5xx."""
+    if isinstance(error, AuthenticationError):
+        cause = error.__cause__
+        return isinstance(cause, APIError) and cause.status_code is not None and cause.status_code >= 500
+    return isinstance(error, requests.Timeout | requests.ConnectionError)
