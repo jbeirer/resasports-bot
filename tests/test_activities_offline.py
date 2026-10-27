@@ -8,7 +8,7 @@ import requests
 import responses
 
 from pysportbot import Activity, SportBot
-from pysportbot.activities import CALENDAR_DAYS, SLOTS_READ_TIMEOUT, Activities
+from pysportbot.activities import CALENDAR_DAYS, SLOTS_READ_TIMEOUT, Activities, find_activity
 from pysportbot.authenticator import Authenticator
 from pysportbot.client import ApiClient
 from pysportbot.endpoints import Endpoints
@@ -349,3 +349,28 @@ def test_requests_use_slots_timeout(activities, method):
         getattr(activities, method)(*args)
 
     assert post.call_args.kwargs["timeout"] == (5, SLOTS_READ_TIMEOUT)
+
+
+def test_daily_slots_ignores_case_and_spaces_in_activity_name(activities):
+    acts = activities.fetch()
+
+    slots = activities.daily_slots(acts, "  yoga ", DAY)
+
+    assert [s.id for s in slots] == [5001, 5003]
+
+
+@pytest.mark.parametrize(
+    ("name", "expected_id"),
+    [
+        pytest.param("yoga", 2, id="exact-match-wins"),
+        pytest.param(" YOGA  ", 1, id="case-and-spaces"),
+        pytest.param("body  power", 3, id="inner-spaces"),
+        pytest.param("Zumba", None, id="no-match"),
+    ],
+)
+def test_find_activity(name, expected_id):
+    acts = [Activity(1, "Yoga", 10), Activity(2, "yoga", 10), Activity(3, "Body Power", 20)]
+
+    found = find_activity(acts, name)
+
+    assert (found.id if found else None) == expected_id
