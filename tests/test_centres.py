@@ -1,11 +1,13 @@
+import json
 import logging
 
 import pytest
 import requests
 import responses
+from responses import matchers
 
 from pysportbot import Centre, SportBot
-from pysportbot.centres import Centres
+from pysportbot.centres import MAX_SPLITS, Centres
 from pysportbot.client import ApiClient
 from pysportbot.endpoints import Endpoints
 from pysportbot.exceptions import APIError, CentreNotFoundError
@@ -139,7 +141,8 @@ def test_fetch_centres_failure_raises_api_error(mocked_api, response_kwargs, sta
 
 
 def test_failed_fetch_is_not_cached(mocked_api, payloads):
-    mocked_api.replace(responses.POST, str(Endpoints.CENTRE), status=500)
+    # Not 500, which would be retried on smaller areas
+    mocked_api.replace(responses.POST, str(Endpoints.CENTRE), status=503)
     mocked_api.add(responses.POST, str(Endpoints.CENTRE), json=payloads["centres"])
     bot = SportBot()
 
@@ -147,3 +150,65 @@ def test_failed_fetch_is_not_cached(mocked_api, payloads):
         bot.centres()
 
     assert len(bot.centres()) == 3
+
+
+WORLD = {"south": -90, "west": -180, "north": 90, "east": 180}
+
+
+def _bounds_of(call):
+    return json.loads(call.request.body)["bounds"]
+
+
+def test_fetch_centres_splits_area_on_500(mocked_api, payloads):
+    """When the whole world returns HTTP 500, each half is fetched and the centres merged without duplicates."""
+    apps = payloads["centres"]["applications"]
+    mocked_api.remove(responses.POST, str(Endpoints.CENTRE))
+    for bounds, response in [
+        (WORLD, {"status": 500}),
+        ({**WORLD, "east": 0}, {"json": {"applications": apps[:2]}}),
+        # A centre on the dividing line is returned by both halves
+        ({**WORLD, "west": 0}, {"json": {"applications": apps[1:]}}),
+    ]:
+        mocked_api.add(
+            responses.POST, str(Endpoints.CENTRE), match=[matchers.json_params_matcher({"bounds": bounds})], **response
+        )
+
+    centres = SportBot().centres()
+
+    assert [c.slug for c in centres] == ["test-centre", "other-centre", "third-centre"]
+    assert [_bounds_of(c) for c in _centre_calls(mocked_api)] == [WORLD, {**WORLD, "east": 0}, {**WORLD, "west": 0}]
+
+
+def test_fetch_centres_split_halves_may_be_empty(mocked_api, payloads):
+    """A half without centres is fine as long as the merged list is not empty."""
+    mocked_api.remove(responses.POST, str(Endpoints.CENTRE))
+    for bounds, response in [
+        (WORLD, {"status": 500}),
+        ({**WORLD, "east": 0}, {"json": {"applications": []}}),
+        ({**WORLD, "west": 0}, {"json": payloads["centres"]}),
+    ]:
+        mocked_api.add(
+            responses.POST, str(Endpoints.CENTRE), match=[matchers.json_params_matcher({"bounds": bounds})], **response
+        )
+
+    assert len(SportBot().centres()) == 3
+
+
+def test_fetch_centres_gives_up_after_max_splits(mocked_api):
+    """An area that keeps failing is split MAX_SPLITS times, then the error is raised without trying other areas."""
+    mocked_api.replace(responses.POST, str(Endpoints.CENTRE), status=500)
+
+    with pytest.raises(APIError) as exc_info:
+        SportBot().centres()
+
+    assert exc_info.value.status_code == 500
+    assert len(_centre_calls(mocked_api)) == MAX_SPLITS + 1
+
+
+def test_fetch_centres_does_not_split_on_other_errors(mocked_api):
+    mocked_api.replace(responses.POST, str(Endpoints.CENTRE), status=503)
+
+    with pytest.raises(APIError):
+        SportBot().centres()
+
+    assert len(_centre_calls(mocked_api)) == 1
