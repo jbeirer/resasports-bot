@@ -28,7 +28,7 @@ def _frozen_now(tz=None):
 def activities(mocked_api) -> Activities:
     client = ApiClient()
     auth = Authenticator(client)
-    auth.login("user@example.com", "password")
+    auth.login("user@example.com", "password", "test-centre")
     return Activities(client, auth)
 
 
@@ -122,7 +122,7 @@ def test_daily_slots_matches_str_activity_ids(activities, mocked_api, payloads):
 def test_daily_slots_times_in_configured_time_zone(mocked_api, time_zone):
     client = ApiClient()
     auth = Authenticator(client)
-    auth.login("user@example.com", "password")
+    auth.login("user@example.com", "password", "test-centre")
     activities = Activities(client, auth, time_zone=time_zone)
 
     slots = activities.daily_slots(activities.fetch(), "Yoga", DAY)
@@ -250,7 +250,7 @@ def test_daily_slots_no_matching_activity(activities, mocked_api, payloads):
 def test_fetch_window_uses_configured_time_zone(mocked_api, time_zone, expected_start, expected_end):
     client = ApiClient()
     auth = Authenticator(client)
-    auth.login("user@example.com", "password")
+    auth.login("user@example.com", "password", "test-centre")
     activities = Activities(client, auth, time_zone=time_zone)
 
     with patch("pysportbot.activities.datetime", wraps=datetime) as mock_datetime:

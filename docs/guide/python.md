@@ -18,7 +18,7 @@ for centre in bot.centres(search="madrid"):
 bot.login("you@example.com", "your-password", "your-centre-slug")
 ```
 
-Creating a `SportBot` sends no requests. `login()` checks the centre, logs in and fetches the activities of the centre.
+Creating a `SportBot` sends no requests. `login()` logs in to the centre and fetches its activities. It raises `CentreNotFoundError` if your account is not registered at the centre.
 
 ## Browse activities and slots
 

@@ -1,0 +1,7 @@
+{
+  "id": "00000000-0000-0000-0000-000000000000",
+  "slug": "test-centre",
+  "resa_application": {"id": "1234"},
+  "name": "Test Centre",
+  "address": {"town": "Testville", "country": "Spain", "street_line": "Calle Falsa 123"}
+}

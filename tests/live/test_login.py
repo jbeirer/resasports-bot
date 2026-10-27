@@ -22,15 +22,18 @@ def test_centres_include_logged_in_centre(bot, live_credentials):
     assert centre in [c.slug for c in bot.centres(search=centre.upper())]
 
 
-def test_login_with_invalid_centre_raises_error():
+def test_login_with_invalid_centre_raises_error(live_credentials):
     """
-    Test that logging in with an invalid centre raises a CentreNotFoundError.
+    Test that logging in to a centre the account is not registered at raises a CentreNotFoundError.
     """
-    invalid_centre = "nonexistent-centre"
+    email, password, centre = live_credentials
     bot = SportBot()
 
-    with pytest.raises(CentreNotFoundError):
-        bot.login("test@example.com", "somepassword", invalid_centre)
+    with pytest.raises(CentreNotFoundError) as exc_info:
+        bot.login(email, password, "nonexistent-centre")
+
+    # The error lists the centres of the account, so it includes the one the account logs in to
+    assert centre in exc_info.value.available
 
 
 def test_login_with_invalid_credentials_raises_error():

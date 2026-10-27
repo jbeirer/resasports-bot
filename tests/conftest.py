@@ -22,6 +22,8 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 DEFAULT_RESPONSES = [
     (responses.POST, Endpoints.CENTRE, "centres.json"),
     (responses.POST, Endpoints.USER_LOGIN, "user_login.json"),
+    # The login fixture's only application, 1234, is test-centre
+    (responses.GET, Endpoints.APPLICATION.format(id_application=1234), "application.json"),
     (responses.GET, Endpoints.SPORT_USER_TOKEN, "sport_user_token.json"),
     (responses.POST, Endpoints.USER, "user.json"),
     (responses.POST, Endpoints.SLOTS, "activities_calendar.json"),
@@ -99,7 +101,7 @@ def full_slot_refused(mocked_api):
 
 @pytest.fixture
 def centre_slug() -> str:
-    return load_fixture("centres.json")["applications"][0]["slug"]
+    return load_fixture("application.json")["slug"]
 
 
 @pytest.fixture
