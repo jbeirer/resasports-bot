@@ -134,7 +134,8 @@ class Activity:
     @classmethod
     def from_api(cls, data: Mapping[str, Any]) -> Self:
         """
-        Build an activity from one entry of the activities calendar.
+        Build an activity from one entry of the activities calendar. Spaces around the name are removed: some
+        centres name activities e.g. "Ciclo Indoor ".
 
         Raises:
             APIError: If a field is missing or not an integer where one is expected.
@@ -142,7 +143,7 @@ class Activity:
         fields = _Fields(data, Endpoints.SLOTS)
         return cls(
             id=fields.integer("id_activity"),
-            name=fields.text("name_activity"),
+            name=fields.text("name_activity").strip(),
             category_id=fields.integer("id_category_activity"),
         )
 
@@ -160,7 +161,7 @@ class Activity:
             return None
         return cls(
             id=fields.integer("id_activity"),
-            name=fields.text("name_activity"),
+            name=fields.text("name_activity").strip(),
             # The same ID as id_category_activity in the activities calendar
             category_id=fields.integer("id_category"),
         )
@@ -225,7 +226,7 @@ class Slot:
         return cls(
             id=fields.integer("id_activity_calendar"),
             activity_id=fields.integer("id_activity"),
-            activity_name=fields.text("name_activity"),
+            activity_name=fields.text("name_activity").strip(),
             category_id=fields.integer("id_category_activity"),
             start=fields.timestamp("start_timestamp", tz),
             end=fields.timestamp("end_timestamp", tz),

@@ -11,6 +11,7 @@ from typing import Any, Literal, cast, get_args
 from urllib.parse import urlsplit
 
 from pysportbot import SportBot
+from pysportbot.activities import find_activity
 from pysportbot.exceptions import ConfigError
 
 logger = logging.getLogger(__name__)
@@ -166,12 +167,14 @@ def validate_activities(bot: SportBot, config: ServiceConfig) -> None:
         ConfigError: If an activity is not found.
     """
     logger.info("Fetching available activities for validation...")
-    available_activity_names = {a.name for a in bot.activities()}
+    activities = bot.activities()
+    available_activity_names = {a.name for a in activities}
 
     logger.debug(f"Available activities: {available_activity_names}")
 
     for cls in config.classes:
-        if cls.activity not in available_activity_names:
+        # Match names as booking does, ignoring case and extra spaces
+        if find_activity(activities, cls.activity) is None:
             raise ConfigError(
                 f"No activity found with the name '{cls.activity}'. "
                 f"Available activities are: {', '.join(sorted(available_activity_names))}."

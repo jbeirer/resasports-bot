@@ -93,7 +93,7 @@ The service waits until the next Friday 07:30, then books each class on its next
 | `password` | string | yes, in the file or the env | `SPORTBOT_PASSWORD` |
 | `centre` | string | yes, in the file or the env | `SPORTBOT_CENTRE` |
 | `booking_execution` | `"now"` or `"<weekday> <time>"` | no, defaults to `"now"` | |
-| `classes` | list of classes, each with `activity`, `class_day` (weekday) and `class_time` (time) | yes, at least one | |
+| `classes` | list of classes, each with `activity` (the name as listed by `pysportbot activities`; case and extra spaces are ignored), `class_day` (weekday) and `class_time` (time) | yes, at least one | |
 | `notify_url` | ntfy topic URL, see [Notifications](notifications.md) | no, notifications are off without it | `SPORTBOT_NOTIFY_URL` |
 | `notify_on` | `"always"` or `"failure"` | no, defaults to `"always"` | `SPORTBOT_NOTIFY_ON` |
 | `notify_language` | `"en"`, `"de"`, `"es"`, `"fr"` or `"it"` | no, defaults to `"en"` | `SPORTBOT_NOTIFY_LANGUAGE` |

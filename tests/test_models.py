@@ -230,3 +230,13 @@ def test_models_are_frozen():
 
     with pytest.raises(dataclasses.FrozenInstanceError):
         slot.inscribed = 0  # type: ignore[misc]
+
+
+def test_activity_names_are_stripped(slot_data):
+    """Some centres name activities with a trailing space, e.g. "Ciclo Indoor "."""
+    data = {**slot_data, "name_activity": " Ciclo Indoor  "}
+    listed = {"id_activity": 1, "name_activity": "Ciclo Indoor ", "id_category": 2, "bookable_online": 1}
+
+    assert Activity.from_api(data).name == "Ciclo Indoor"
+    assert Activity.from_listing(listed).name == "Ciclo Indoor"
+    assert Slot.from_api(data, "Europe/Madrid").activity_name == "Ciclo Indoor"

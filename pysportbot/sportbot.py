@@ -133,7 +133,7 @@ class SportBot:
         Long-running programs can call this before time-critical requests, because the session may expire some time
         after `login()`. It costs one request when the session is still valid. Otherwise it logs in again with the
         email, password and centre of the last successful `login()`, which the bot keeps in memory for this purpose.
-        A re-login keeps the activities fetched by `login()`, so it does not wait for the slow activities request.
+        A re-login keeps the activities fetched by `login()`, so it sends no activities request.
 
         Raises:
             NotLoggedInError: If `login()` has never succeeded.

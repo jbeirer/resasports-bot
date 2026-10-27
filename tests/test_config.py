@@ -1,10 +1,12 @@
 import json
 from datetime import time
+from unittest.mock import MagicMock
 
 import pytest
 
+from pysportbot import Activity
 from pysportbot.exceptions import ConfigError
-from pysportbot.service.config import ClassSpec, ServiceConfig, WeeklyTime, load_config
+from pysportbot.service.config import ClassSpec, ServiceConfig, WeeklyTime, load_config, validate_activities
 
 CREDENTIALS = {"email": "file@example.com", "password": "file-secret", "centre": "file-centre"}
 CLASSES = [{"activity": "Yoga", "class_day": "Monday", "class_time": "18:00:00"}]
@@ -256,3 +258,22 @@ def test_password_not_in_repr():
 
 def test_weekly_time_str():
     assert str(WeeklyTime(weekday=4, time=time(7, 30))) == "Friday 07:30:00"
+
+
+@pytest.mark.parametrize(
+    ("activity", "valid"),
+    [
+        pytest.param("ciclo  indoor ", True, id="case-and-spaces"),
+        pytest.param("Zumba", False, id="unknown"),
+    ],
+)
+def test_validate_activities_matches_as_booking_does(activity, valid):
+    bot = MagicMock()
+    bot.activities.return_value = [Activity(1, "Ciclo Indoor", 10)]
+    config = ServiceConfig("e@example.com", "pw", "centre", None, (ClassSpec(activity, 0, time(18, 0)),))
+
+    if valid:
+        validate_activities(bot, config)
+    else:
+        with pytest.raises(ConfigError, match="Zumba"):
+            validate_activities(bot, config)

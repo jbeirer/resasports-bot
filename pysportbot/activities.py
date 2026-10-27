@@ -1,5 +1,6 @@
 import json
 import logging
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from itertools import chain
@@ -153,7 +154,7 @@ class Activities:
         logger.info(f"Fetching available slots for '{activity_name}' on {day_str}...")
 
         # Check if the activity exists
-        activity = next((a for a in activities if a.name == activity_name), None)
+        activity = find_activity(activities, activity_name)
         if activity is None:
             error = ActivityNotFoundError(activity_name, list(dict.fromkeys(a.name for a in activities)))
             logger.error(str(error))
@@ -175,6 +176,22 @@ class Activities:
             logger.warning(f"No matching slots found for activity '{activity_name}' on {day_str}.")
 
         return slots
+
+
+def _normalize(name: str) -> str:
+    return " ".join(name.split()).casefold()
+
+
+def find_activity(activities: Sequence[Activity], name: str) -> Activity | None:
+    """
+    Find an activity by name. An exact match wins; otherwise case and extra spaces are ignored, so that "ciclo indoor"
+    finds "Ciclo Indoor".
+    """
+    exact = next((a for a in activities if a.name == name), None)
+    if exact is not None:
+        return exact
+    wanted = _normalize(name)
+    return next((a for a in activities if _normalize(a.name) == wanted), None)
 
 
 def _to_day(day: date | str) -> str:
